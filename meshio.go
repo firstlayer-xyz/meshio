@@ -16,11 +16,22 @@ type FaceColor struct {
 	Hex string // "#RRGGBB" or "#RRGGBBAA"
 }
 
+// Attachment is an extra OPC part carried inside a 3MF package alongside the
+// mesh. It round-trips opaque bytes — meshio assigns no meaning to the content.
+// Path is package-relative (e.g. "Metadata/extra.json"); ContentType is
+// the OPC content type registered for the part.
+type Attachment struct {
+	Path        string
+	ContentType string
+	Data        []byte
+}
+
 // Mesh holds triangle geometry and optional per-face colors.
 type Mesh struct {
-	Vertices   []float32   // flat xyz positions (len = numVerts * 3)
-	Indices    []uint32    // triangle vertex indices (len = numTris * 3)
-	FaceColors []FaceColor // per-triangle color (len = numTris, or nil/empty for no color)
+	Vertices    []float32    // flat xyz positions (len = numVerts * 3)
+	Indices     []uint32     // triangle vertex indices (len = numTris * 3)
+	FaceColors  []FaceColor  // per-triangle color (len = numTris, or nil/empty for no color)
+	Attachments []Attachment // extra OPC parts (3MF only); nil for none
 }
 
 // MergeVertices deduplicates coincident vertices by snapping coordinates

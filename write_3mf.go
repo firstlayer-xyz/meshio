@@ -19,6 +19,14 @@ func (m *Mesh) Encode3MF(w io.Writer) error {
 		return fmt.Errorf("meshio: empty mesh")
 	}
 
+	seenAtt := map[string]bool{}
+	for _, att := range m.Attachments {
+		if seenAtt[att.Path] {
+			return fmt.Errorf("meshio: duplicate attachment path %q", att.Path)
+		}
+		seenAtt[att.Path] = true
+	}
+
 	// Build color palette
 	var palette []string
 	paletteIdx := map[string]int{}
@@ -106,18 +114,26 @@ func (m *Mesh) Encode3MF(w io.Writer) error {
 
 	modelXML := sb.String()
 
-	contentTypes := `<?xml version="1.0" encoding="UTF-8"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
- <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />
- <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml" />
-</Types>
-`
+	var ctBuilder strings.Builder
+	ctBuilder.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
+	ctBuilder.WriteString(`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` + "\n")
+	ctBuilder.WriteString(` <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />` + "\n")
+	ctBuilder.WriteString(` <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml" />` + "\n")
+	for _, att := range m.Attachments {
+		fmt.Fprintf(&ctBuilder, ` <Override PartName="/%s" ContentType="%s" />`+"\n", att.Path, att.ContentType)
+	}
+	ctBuilder.WriteString("</Types>\n")
+	contentTypes := ctBuilder.String()
 
-	rels := `<?xml version="1.0" encoding="UTF-8"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
- <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" />
-</Relationships>
-`
+	var relsBuilder strings.Builder
+	relsBuilder.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
+	relsBuilder.WriteString(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` + "\n")
+	relsBuilder.WriteString(` <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" />` + "\n")
+	for i, att := range m.Attachments {
+		fmt.Fprintf(&relsBuilder, ` <Relationship Target="/%s" Id="attachrel%d" Type="http://schemas.firstlayer.xyz/meshio/2026/01/attachment" />`+"\n", att.Path, i)
+	}
+	relsBuilder.WriteString("</Relationships>\n")
+	rels := relsBuilder.String()
 
 	zw := zip.NewWriter(w)
 
@@ -129,6 +145,12 @@ func (m *Mesh) Encode3MF(w io.Writer) error {
 	}
 	if err := addZipEntry(zw, "3D/3dmodel.model", modelXML); err != nil {
 		return err
+	}
+
+	for _, att := range m.Attachments {
+		if err := addZipBytes(zw, att.Path, att.Data); err != nil {
+			return err
+		}
 	}
 
 	if hasColors {
@@ -170,18 +192,63 @@ func Decode3MF(r io.Reader) (*Mesh, error) {
 		return nil, fmt.Errorf("meshio: opening 3mf zip: %w", err)
 	}
 
-	// Find the model file
+	overrides := map[string]string{} // "/Path" -> contentType
 	for _, f := range zr.File {
-		if strings.HasSuffix(f.Name, ".model") {
+		if f.Name == "[Content_Types].xml" {
 			rc, err := f.Open()
 			if err != nil {
-				return nil, fmt.Errorf("meshio: opening %s: %w", f.Name, err)
+				return nil, fmt.Errorf("meshio: opening content types: %w", err)
 			}
-			defer rc.Close()
-			return decode3MFModel(rc)
+			b, err := io.ReadAll(rc)
+			if err != nil {
+				rc.Close()
+				return nil, fmt.Errorf("meshio: reading content types: %w", err)
+			}
+			rc.Close()
+			overrides = parseContentTypeOverrides(string(b))
 		}
 	}
-	return nil, fmt.Errorf("meshio: no .model file found in 3mf archive")
+
+	var mesh *Mesh
+	var attachments []Attachment
+	for _, f := range zr.File {
+		name := f.Name
+		switch {
+		case strings.HasSuffix(name, ".model"):
+			rc, err := f.Open()
+			if err != nil {
+				return nil, fmt.Errorf("meshio: opening %s: %w", name, err)
+			}
+			mesh, err = decode3MFModel(rc)
+			rc.Close()
+			if err != nil {
+				return nil, err
+			}
+		case name == "[Content_Types].xml" || strings.HasPrefix(name, "_rels/") ||
+			strings.HasSuffix(name, "/.rels") || name == "Metadata/Slic3r_PE_model.config":
+			// core/package parts and the slicer color config are not attachments
+		default:
+			rc, err := f.Open()
+			if err != nil {
+				return nil, fmt.Errorf("meshio: opening %s: %w", name, err)
+			}
+			b, err := io.ReadAll(rc)
+			rc.Close()
+			if err != nil {
+				return nil, fmt.Errorf("meshio: reading %s: %w", name, err)
+			}
+			attachments = append(attachments, Attachment{
+				Path:        name,
+				ContentType: overrides["/"+name],
+				Data:        b,
+			})
+		}
+	}
+	if mesh == nil {
+		return nil, fmt.Errorf("meshio: no .model file found in 3mf archive")
+	}
+	mesh.Attachments = attachments
+	return mesh, nil
 }
 
 func toReaderAt(r io.Reader) (io.ReaderAt, int64, error) {
@@ -209,6 +276,17 @@ func addZipEntry(zw *zip.Writer, name, content string) error {
 	}
 	_, err = w.Write([]byte(content))
 	if err != nil {
+		return fmt.Errorf("meshio: writing %s: %w", name, err)
+	}
+	return nil
+}
+
+func addZipBytes(zw *zip.Writer, name string, content []byte) error {
+	w, err := zw.Create(name)
+	if err != nil {
+		return fmt.Errorf("meshio: creating %s: %w", name, err)
+	}
+	if _, err := w.Write(content); err != nil {
 		return fmt.Errorf("meshio: writing %s: %w", name, err)
 	}
 	return nil

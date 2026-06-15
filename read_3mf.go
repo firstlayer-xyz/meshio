@@ -8,6 +8,36 @@ import (
 	"strings"
 )
 
+// parseContentTypeOverrides extracts PartName -> ContentType from the OPC
+// [Content_Types].xml <Override> elements.
+func parseContentTypeOverrides(xmlText string) map[string]string {
+	out := map[string]string{}
+	dec := xml.NewDecoder(strings.NewReader(xmlText))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok || se.Name.Local != "Override" {
+			continue
+		}
+		var part, ct string
+		for _, a := range se.Attr {
+			switch a.Name.Local {
+			case "PartName":
+				part = a.Value
+			case "ContentType":
+				ct = a.Value
+			}
+		}
+		if part != "" {
+			out[part] = ct
+		}
+	}
+	return out
+}
+
 // decode3MFModel parses the 3D model XML from a 3MF archive.
 func decode3MFModel(r io.Reader) (*Mesh, error) {
 	decoder := xml.NewDecoder(r)
