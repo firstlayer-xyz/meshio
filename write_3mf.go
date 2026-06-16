@@ -182,7 +182,6 @@ func (m *Mesh) Write3MF(path string) error {
 // The reader must support io.ReaderAt and io.Seeker for zip decoding,
 // or the full contents will be buffered in memory.
 func Decode3MF(r io.Reader) (*Mesh, error) {
-	// zip.NewReader needs a ReaderAt + size. Buffer if needed.
 	ra, size, err := toReaderAt(r)
 	if err != nil {
 		return nil, fmt.Errorf("meshio: reading 3mf: %w", err)
@@ -192,60 +191,78 @@ func Decode3MF(r io.Reader) (*Mesh, error) {
 		return nil, fmt.Errorf("meshio: opening 3mf zip: %w", err)
 	}
 
-	overrides := map[string]string{} // "/Path" -> contentType
+	overrides := map[string]string{}
+	byName := map[string]*zip.File{}
 	for _, f := range zr.File {
+		byName[f.Name] = f
 		if f.Name == "[Content_Types].xml" {
 			rc, err := f.Open()
 			if err != nil {
 				return nil, fmt.Errorf("meshio: opening content types: %w", err)
 			}
 			b, err := io.ReadAll(rc)
+			rc.Close()
 			if err != nil {
-				rc.Close()
 				return nil, fmt.Errorf("meshio: reading content types: %w", err)
 			}
-			rc.Close()
 			overrides = parseContentTypeOverrides(string(b))
 		}
 	}
 
-	var mesh *Mesh
+	partCache := map[string]*parsedPart{}
+	getPart := func(p string) (*parsedPart, error) {
+		name := strings.TrimPrefix(p, "/")
+		if pp, ok := partCache[name]; ok {
+			return pp, nil
+		}
+		f := byName[name]
+		if f == nil {
+			return nil, fmt.Errorf("meshio: 3mf references missing part %q", p)
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("meshio: opening %s: %w", name, err)
+		}
+		pp, err := parseModelPart(rc)
+		rc.Close()
+		if err != nil {
+			return nil, err
+		}
+		partCache[name] = pp
+		return pp, nil
+	}
+
+	rootName := findRootModelPart(zr)
+	if rootName == "" {
+		return nil, fmt.Errorf("meshio: no .model file found in 3mf archive")
+	}
+	root, err := getPart(rootName)
+	if err != nil {
+		return nil, err
+	}
+	mesh, err := resolveBuild(root, getPart)
+	if err != nil {
+		return nil, err
+	}
+
 	var attachments []Attachment
 	for _, f := range zr.File {
 		name := f.Name
-		switch {
-		case strings.HasSuffix(name, ".model"):
-			rc, err := f.Open()
-			if err != nil {
-				return nil, fmt.Errorf("meshio: opening %s: %w", name, err)
-			}
-			mesh, err = decode3MFModel(rc)
-			rc.Close()
-			if err != nil {
-				return nil, err
-			}
-		case name == "[Content_Types].xml" || strings.HasPrefix(name, "_rels/") ||
-			strings.HasSuffix(name, "/.rels") || name == "Metadata/Slic3r_PE_model.config":
-			// core/package parts and the slicer color config are not attachments
-		default:
-			rc, err := f.Open()
-			if err != nil {
-				return nil, fmt.Errorf("meshio: opening %s: %w", name, err)
-			}
-			b, err := io.ReadAll(rc)
-			rc.Close()
-			if err != nil {
-				return nil, fmt.Errorf("meshio: reading %s: %w", name, err)
-			}
-			attachments = append(attachments, Attachment{
-				Path:        name,
-				ContentType: overrides["/"+name],
-				Data:        b,
-			})
+		if strings.HasSuffix(name, ".model") ||
+			name == "[Content_Types].xml" || strings.HasPrefix(name, "_rels/") ||
+			strings.HasSuffix(name, "/.rels") || name == "Metadata/Slic3r_PE_model.config" {
+			continue
 		}
-	}
-	if mesh == nil {
-		return nil, fmt.Errorf("meshio: no .model file found in 3mf archive")
+		rc, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("meshio: opening %s: %w", name, err)
+		}
+		b, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			return nil, fmt.Errorf("meshio: reading %s: %w", name, err)
+		}
+		attachments = append(attachments, Attachment{Path: name, ContentType: overrides["/"+name], Data: b})
 	}
 	mesh.Attachments = attachments
 	return mesh, nil
