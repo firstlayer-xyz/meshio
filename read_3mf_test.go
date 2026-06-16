@@ -68,3 +68,19 @@ func TestParseModelPart_Components(t *testing.T) {
 		t.Errorf("component = %+v", c)
 	}
 }
+
+const relsXML = `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+ <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+ <Relationship Target="/Metadata/thumbnail.png" Id="rel1" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail"/>
+</Relationships>`
+
+func TestRootModelFromRels(t *testing.T) {
+	got := rootModelFromRels(relsXML)
+	if got != "3D/3dmodel.model" {
+		t.Errorf("rootModelFromRels = %q want 3D/3dmodel.model", got)
+	}
+	if rootModelFromRels("<Relationships/>") != "" {
+		t.Error("want empty for no 3dmodel relationship")
+	}
+}
