@@ -96,19 +96,39 @@ func Decode(r io.Reader, format string) (*Mesh, error) {
 	}
 }
 
+// readers maps a lowercase file extension to its reader. It is the single
+// source of truth for which mesh formats Read (and the desktop app, facetc,
+// and facetrender) treat as importable meshes.
+var readers = map[string]func(string) (*Mesh, error){
+	".stl": ReadSTL,
+	".obj": ReadOBJ,
+	".3mf": Read3MF,
+}
+
 // Read reads a mesh file, auto-detecting format from the extension.
 func Read(path string) (*Mesh, error) {
 	ext := strings.ToLower(pathExt(path))
-	switch ext {
-	case ".stl":
-		return ReadSTL(path)
-	case ".obj":
-		return ReadOBJ(path)
-	case ".3mf":
-		return Read3MF(path)
-	default:
+	r, ok := readers[ext]
+	if !ok {
 		return nil, fmt.Errorf("meshio: unsupported file extension %q", ext)
 	}
+	return r(path)
+}
+
+// CanRead reports whether Read can decode the file at path, by extension.
+func CanRead(path string) bool {
+	_, ok := readers[strings.ToLower(pathExt(path))]
+	return ok
+}
+
+// ReadExtensions returns the importable mesh extensions (each with a leading
+// dot), in no particular order.
+func ReadExtensions() []string {
+	exts := make([]string, 0, len(readers))
+	for e := range readers {
+		exts = append(exts, e)
+	}
+	return exts
 }
 
 // ReadSTL reads a binary or ASCII STL file.

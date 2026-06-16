@@ -363,3 +363,28 @@ endsolid test
 		t.Errorf("STL ASCII: expected 3 vertices, got %d", len(decoded.Vertices)/3)
 	}
 }
+
+func TestCanRead(t *testing.T) {
+	cases := map[string]bool{
+		"a.stl": true, "A.STL": true, "b.obj": true, "c.3mf": true,
+		"d.fct": false, "e.png": false, "noext": false,
+	}
+	for path, want := range cases {
+		if got := CanRead(path); got != want {
+			t.Errorf("CanRead(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
+
+func TestReadExtensions(t *testing.T) {
+	got := ReadExtensions()
+	want := map[string]bool{".stl": true, ".obj": true, ".3mf": true}
+	if len(got) != len(want) {
+		t.Fatalf("ReadExtensions() = %v, want 3 entries", got)
+	}
+	for _, e := range got {
+		if !want[e] {
+			t.Errorf("unexpected extension %q", e)
+		}
+	}
+}
