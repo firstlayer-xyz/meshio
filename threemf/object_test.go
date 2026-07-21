@@ -111,7 +111,10 @@ func TestObjectValidate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.obj.validate()
+			// validate takes the reserved set from its caller; these cases
+			// cover the Bambu writer's, which includes the generated
+			// objects part named after the container id.
+			err := tc.obj.validate(tc.obj.bambuReservedPaths()...)
 			if tc.want == "" {
 				if err != nil {
 					t.Fatalf("expected valid, got %v", err)

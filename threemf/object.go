@@ -98,7 +98,12 @@ func (o *Object) palette() ([]string, map[int]int) {
 }
 
 // validate reports the first structural problem with the object.
-func (o *Object) validate() error {
+//
+// reserved lists the package parts the calling writer emits itself, which an
+// attachment must not collide with. It is a parameter because the set differs
+// per dialect: EncodeBambu writes an objects part and a Bambu model config,
+// EncodePrusa writes neither.
+func (o *Object) validate(reserved ...string) error {
 	if len(o.Parts) == 0 {
 		return fmt.Errorf("meshio: object has no parts")
 	}
@@ -113,14 +118,5 @@ func (o *Object) validate() error {
 			return fmt.Errorf("meshio: part %q has negative filament slot %d", p.Name, p.Filament)
 		}
 	}
-	// The objects part is named after the container id, so the reserved list
-	// has to come from the same layout EncodeBambu will emit.
-	return validateAttachmentPaths(o.Attachments,
-		"[Content_Types].xml",
-		"_rels/.rels",
-		"3D/3dmodel.model",
-		"3D/_rels/3dmodel.model.rels",
-		"Metadata/model_settings.config",
-		o.layout(false).objectsPath,
-	)
+	return validateAttachmentPaths(o.Attachments, reserved...)
 }

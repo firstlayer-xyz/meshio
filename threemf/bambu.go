@@ -60,7 +60,7 @@ func (o *Object) layout(hasPalette bool) bambuLayout {
 // Unlike Encode, stl.Encode, and obj.Encode, EncodeBambu does not mutate its
 // input: it never calls MergeVertices on o's part geometry.
 func EncodeBambu(w io.Writer, o *Object) error {
-	if err := o.validate(); err != nil {
+	if err := o.validate(o.bambuReservedPaths()...); err != nil {
 		return err
 	}
 
@@ -171,6 +171,20 @@ func EncodeBambu(w io.Writer, o *Object) error {
 		return fmt.Errorf("meshio: closing zip: %w", err)
 	}
 	return nil
+}
+
+// bambuReservedPaths lists the package parts EncodeBambu emits itself, which an
+// attachment must not collide with. The objects part is named after the
+// container id, so the list comes from the same layout EncodeBambu will emit.
+func (o *Object) bambuReservedPaths() []string {
+	return []string{
+		"[Content_Types].xml",
+		"_rels/.rels",
+		"3D/3dmodel.model",
+		"3D/_rels/3dmodel.model.rels",
+		"Metadata/model_settings.config",
+		o.layout(false).objectsPath,
+	}
 }
 
 // WriteBambu exports the object to a Bambu Studio 3MF file at path.
