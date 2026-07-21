@@ -10,7 +10,7 @@ import (
 // EncodeOBJ writes the mesh as Wavefront OBJ to w.
 // If mtlW is non-nil and the mesh has face colors, material definitions are written to mtlW
 // and a mtllib directive referencing mtlName is included.
-func (m *Mesh) EncodeOBJ(w io.Writer, mtlW io.Writer) error {
+func EncodeOBJ(w io.Writer, m *Mesh, mtlW io.Writer) error {
 	m.MergeVertices()
 	numVerts := len(m.Vertices) / 3
 	numTris := len(m.Indices) / 3
@@ -76,7 +76,7 @@ func encodeMtl(m *Mesh, w io.Writer) error {
 
 // WriteOBJ exports a Mesh to a Wavefront OBJ file at the given path.
 // A companion .mtl file is written alongside if face colors are present.
-func (m *Mesh) WriteOBJ(path string) error {
+func WriteOBJ(path string, m *Mesh) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("meshio: %w", err)
@@ -94,7 +94,7 @@ func (m *Mesh) WriteOBJ(path string) error {
 		defer mtlFile.Close()
 	}
 
-	return m.EncodeOBJ(f, mtlFile)
+	return EncodeOBJ(f, m, mtlFile)
 }
 
 // parseHexColor converts "#RRGGBB" or "#RRGGBBAA" to [0,1] floats.

@@ -1,7 +1,7 @@
 // Package meshio reads and writes triangle mesh files (3MF, STL, OBJ).
 //
 // Core encode/decode functions work with io.Writer/io.Reader.
-// Convenience methods on Mesh handle file I/O via path strings.
+// Convenience functions handle file I/O via path strings.
 package meshio
 
 import (
@@ -9,42 +9,30 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/firstlayer-xyz/meshio/geom"
 )
 
-// FaceColor holds per-triangle color information.
-type FaceColor struct {
-	Hex string // "#RRGGBB" or "#RRGGBBAA"
-}
-
-// Attachment is an extra OPC part carried inside a 3MF package alongside the
-// mesh. It round-trips opaque bytes — meshio assigns no meaning to the content.
-// Path is package-relative (e.g. "Metadata/extra.json"); ContentType is
-// the OPC content type registered for the part.
-type Attachment struct {
-	Path        string
-	ContentType string
-	Data        []byte
-}
-
-// Mesh holds triangle geometry, optional per-face display color, and any
-// extra package parts. It is the interchange type: everything Read and
-// Decode return.
-type Mesh struct {
-	Geometry                 // embedded: m.Vertices, m.Indices, m.MergeVertices()
-	FaceColors  []FaceColor  // per-triangle display color (len = numTris, or nil)
-	Attachments []Attachment // extra OPC parts (3MF only); nil for none
-}
+// Re-exported from geom so callers can use meshio.Mesh without importing geom
+// directly. These are aliases, not new types: meshio.Mesh and geom.Mesh are
+// the same type and are freely interchangeable.
+type (
+	Geometry   = geom.Geometry
+	Mesh       = geom.Mesh
+	FaceColor  = geom.FaceColor
+	Attachment = geom.Attachment
+)
 
 // Encode writes the mesh to w in the specified format.
 // Supported formats: "stl", "obj", "3mf".
-func (m *Mesh) Encode(w io.Writer, format string) error {
+func Encode(w io.Writer, m *Mesh, format string) error {
 	switch strings.ToLower(format) {
 	case "stl":
-		return m.EncodeSTL(w)
+		return EncodeSTL(w, m)
 	case "obj":
-		return m.EncodeOBJ(w, nil)
+		return EncodeOBJ(w, m, nil)
 	case "3mf":
-		return m.Encode3MF(w)
+		return Encode3MF(w, m)
 	default:
 		return fmt.Errorf("meshio: unsupported format %q", format)
 	}

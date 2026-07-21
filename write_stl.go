@@ -10,7 +10,7 @@ import (
 
 // EncodeSTL writes the mesh as binary STL to w.
 // STL does not support per-face color; FaceColors are ignored.
-func (m *Mesh) EncodeSTL(w io.Writer) error {
+func EncodeSTL(w io.Writer, m *Mesh) error {
 	m.MergeVertices()
 	numTris := len(m.Indices) / 3
 
@@ -93,11 +93,11 @@ func (m *Mesh) EncodeSTL(w io.Writer) error {
 }
 
 // WriteSTL exports a Mesh to a binary STL file at the given path.
-func (m *Mesh) WriteSTL(path string) error {
+func WriteSTL(path string, m *Mesh) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("meshio: %w", err)
 	}
 	defer f.Close()
-	return m.EncodeSTL(f)
+	return EncodeSTL(f, m)
 }

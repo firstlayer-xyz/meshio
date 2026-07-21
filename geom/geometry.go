@@ -1,4 +1,7 @@
-package meshio
+// Package geom holds the shared mesh types: geometry, per-face display color,
+// and package attachments. It is a leaf package -- it imports no other package
+// in this module, so every format package can depend on it without a cycle.
+package geom
 
 // Geometry is triangle geometry — positions and indices, with no presentation
 // or packaging concerns. It is the substrate shared by Mesh (display) and

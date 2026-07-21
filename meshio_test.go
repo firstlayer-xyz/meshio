@@ -64,7 +64,7 @@ func TestMergeVertices(t *testing.T) {
 func TestSTLRoundTrip(t *testing.T) {
 	orig := triangle()
 	var buf bytes.Buffer
-	if err := orig.EncodeSTL(&buf); err != nil {
+	if err := EncodeSTL(&buf, orig); err != nil {
 		t.Fatalf("EncodeSTL: %v", err)
 	}
 	decoded, err := DecodeSTL(&buf)
@@ -82,7 +82,7 @@ func TestSTLRoundTrip(t *testing.T) {
 func TestSTLCubeRoundTrip(t *testing.T) {
 	orig := coloredCube()
 	var buf bytes.Buffer
-	if err := orig.EncodeSTL(&buf); err != nil {
+	if err := EncodeSTL(&buf, orig); err != nil {
 		t.Fatalf("EncodeSTL: %v", err)
 	}
 	decoded, err := DecodeSTL(&buf)
@@ -97,7 +97,7 @@ func TestSTLCubeRoundTrip(t *testing.T) {
 func TestSTLEmpty(t *testing.T) {
 	m := &Mesh{}
 	var buf bytes.Buffer
-	if err := m.EncodeSTL(&buf); err == nil {
+	if err := EncodeSTL(&buf, m); err == nil {
 		t.Error("EncodeSTL: expected error for empty mesh")
 	}
 }
@@ -107,7 +107,7 @@ func TestSTLEmpty(t *testing.T) {
 func TestOBJRoundTrip(t *testing.T) {
 	orig := triangle()
 	var buf bytes.Buffer
-	if err := orig.EncodeOBJ(&buf, nil); err != nil {
+	if err := EncodeOBJ(&buf, orig, nil); err != nil {
 		t.Fatalf("EncodeOBJ: %v", err)
 	}
 	decoded, err := DecodeOBJ(&buf)
@@ -125,7 +125,7 @@ func TestOBJRoundTrip(t *testing.T) {
 func TestOBJWithMaterials(t *testing.T) {
 	orig := coloredCube()
 	var objBuf, mtlBuf bytes.Buffer
-	if err := orig.EncodeOBJ(&objBuf, &mtlBuf); err != nil {
+	if err := EncodeOBJ(&objBuf, orig, &mtlBuf); err != nil {
 		t.Fatalf("EncodeOBJ: %v", err)
 	}
 	// MTL should contain both colors
@@ -149,7 +149,7 @@ func TestOBJWithMaterials(t *testing.T) {
 func TestOBJCubeRoundTrip(t *testing.T) {
 	orig := coloredCube()
 	var buf bytes.Buffer
-	if err := orig.EncodeOBJ(&buf, nil); err != nil {
+	if err := EncodeOBJ(&buf, orig, nil); err != nil {
 		t.Fatalf("EncodeOBJ: %v", err)
 	}
 	decoded, err := DecodeOBJ(&buf)
@@ -176,7 +176,7 @@ func TestOBJQuadFan(t *testing.T) {
 func TestOBJEmpty(t *testing.T) {
 	m := &Mesh{}
 	var buf bytes.Buffer
-	if err := m.EncodeOBJ(&buf, nil); err == nil {
+	if err := EncodeOBJ(&buf, m, nil); err == nil {
 		t.Error("EncodeOBJ: expected error for empty mesh")
 	}
 }
@@ -186,7 +186,7 @@ func TestOBJEmpty(t *testing.T) {
 func TestThreeMFRoundTrip(t *testing.T) {
 	orig := triangle()
 	var buf bytes.Buffer
-	if err := orig.Encode3MF(&buf); err != nil {
+	if err := Encode3MF(&buf, orig); err != nil {
 		t.Fatalf("Encode3MF: %v", err)
 	}
 	decoded, err := Decode3MF(&buf)
@@ -204,7 +204,7 @@ func TestThreeMFRoundTrip(t *testing.T) {
 func TestThreeMFColorRoundTrip(t *testing.T) {
 	orig := coloredCube()
 	var buf bytes.Buffer
-	if err := orig.Encode3MF(&buf); err != nil {
+	if err := Encode3MF(&buf, orig); err != nil {
 		t.Fatalf("Encode3MF: %v", err)
 	}
 	decoded, err := Decode3MF(&buf)
@@ -233,14 +233,14 @@ func TestThreeMFColorRoundTrip(t *testing.T) {
 func TestThreeMFEmpty(t *testing.T) {
 	m := &Mesh{}
 	var buf bytes.Buffer
-	if err := m.Encode3MF(&buf); err == nil {
+	if err := Encode3MF(&buf, m); err == nil {
 		t.Error("Encode3MF: expected error for empty mesh")
 	}
 }
 
 func TestEncode3MF_NoSlic3rConfig(t *testing.T) {
 	var buf bytes.Buffer
-	if err := coloredCube().Encode3MF(&buf); err != nil {
+	if err := Encode3MF(&buf, coloredCube()); err != nil {
 		t.Fatalf("Encode3MF: %v", err)
 	}
 	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
@@ -280,7 +280,7 @@ func TestEncodeDecodeDispatch(t *testing.T) {
 
 	for _, format := range []string{"stl", "obj"} {
 		var buf bytes.Buffer
-		if err := orig.Encode(&buf, format); err != nil {
+		if err := Encode(&buf, orig, format); err != nil {
 			t.Fatalf("Encode(%s): %v", format, err)
 		}
 		decoded, err := Decode(&buf, format)
@@ -294,7 +294,7 @@ func TestEncodeDecodeDispatch(t *testing.T) {
 
 	// 3MF
 	var buf bytes.Buffer
-	if err := orig.Encode(&buf, "3mf"); err != nil {
+	if err := Encode(&buf, orig, "3mf"); err != nil {
 		t.Fatalf("Encode(3mf): %v", err)
 	}
 	decoded, err := Decode(&buf, "3mf")
@@ -309,7 +309,7 @@ func TestEncodeDecodeDispatch(t *testing.T) {
 func TestEncodeUnsupported(t *testing.T) {
 	m := triangle()
 	var buf bytes.Buffer
-	if err := m.Encode(&buf, "xyz"); err == nil {
+	if err := Encode(&buf, m, "xyz"); err == nil {
 		t.Error("Encode: expected error for unsupported format")
 	}
 }

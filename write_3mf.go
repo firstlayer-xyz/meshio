@@ -9,7 +9,7 @@ import (
 )
 
 // Encode3MF writes the mesh as a 3MF archive to w.
-func (m *Mesh) Encode3MF(w io.Writer) error {
+func Encode3MF(w io.Writer, m *Mesh) error {
 	m.MergeVertices()
 	numVerts := len(m.Vertices) / 3
 	numTris := len(m.Indices) / 3
@@ -159,13 +159,13 @@ func (m *Mesh) Encode3MF(w io.Writer) error {
 }
 
 // Write3MF exports a Mesh to a 3MF file at the given path.
-func (m *Mesh) Write3MF(path string) error {
+func Write3MF(path string, m *Mesh) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("meshio: %w", err)
 	}
 	defer f.Close()
-	return m.Encode3MF(f)
+	return Encode3MF(f, m)
 }
 
 func normalizeHex(hex string) string {

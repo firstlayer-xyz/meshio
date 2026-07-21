@@ -164,7 +164,19 @@ Move the shared types to a leaf package so the format packages can depend on the
 
 **Interfaces:**
 - Consumes: Task 3's cleaned-up root package.
-- Produces: package `geom` at `github.com/firstlayer-xyz/meshio/geom` exporting `Geometry` (with `MergeVertices`), `Mesh`, `FaceColor`, `Attachment`. Root re-exports all four as type aliases, so `meshio.Mesh` continues to resolve to the same type.
+- Produces: package `geom` at `github.com/firstlayer-xyz/meshio/geom` exporting `Geometry` (with `MergeVertices`), `Mesh`, `FaceColor`, `Attachment`. Root re-exports all four as type aliases, so `meshio.Mesh` continues to resolve to the same type. Root's seven encoding methods become package functions:
+
+```go
+func Encode(w io.Writer, m *Mesh, format string) error
+func EncodeSTL(w io.Writer, m *Mesh) error
+func WriteSTL(path string, m *Mesh) error
+func EncodeOBJ(w io.Writer, m *Mesh, mtlW io.Writer) error
+func WriteOBJ(path string, m *Mesh) error
+func Encode3MF(w io.Writer, m *Mesh) error
+func Write3MF(path string, m *Mesh) error
+```
+
+  Parameter order matches the eventual per-package form (`stl.Encode(w, m)`), so Tasks 5-7 are pure relocation with no signature churn.
 
 - [ ] **Step 1: Create `geom/geometry.go`**
 
@@ -205,18 +217,34 @@ type (
 
 Add `"github.com/firstlayer-xyz/meshio/geom"` to the imports.
 
-- [ ] **Step 5: Build and let the compiler find the rest**
+- [ ] **Step 5: Convert the seven encoding methods to functions**
+
+Go forbids declaring a method whose receiver type is defined in another package, and a type alias does not change the defining package. So the moment `Mesh` lives in `geom`, every method on `*Mesh` stops compiling:
+
+```
+./mesh.go:28:10: cannot define new methods on non-local type Mesh
+```
+
+Convert all seven to package-level functions with the signatures given under **Interfaces** above. The conversion is mechanical: the receiver `m` becomes a parameter and each body stays byte-identical otherwise. Do not reorder or restructure anything inside them.
+
+`MergeVertices` is unaffected — it is a method on `Geometry`, defined in `geom`, so it stays a method and moves with the type.
+
+- [ ] **Step 6: Update call sites**
+
+Roughly 20 call sites in `meshio_test.go` and `attachment_test.go`, plus internal calls in `mesh.go` and the `write_*.go` files. Call syntax only: `orig.EncodeSTL(&buf)` becomes `EncodeSTL(&buf, orig)`. **Do not touch a single test assertion** — if an assertion needs changing to pass, behavior drifted and something is wrong.
+
+- [ ] **Step 7: Build and let the compiler find the rest**
 
 Run: `go build ./...`
 
-Every remaining root file (`read_stl.go`, `write_3mf.go`, and so on) still refers to `Mesh`, `FaceColor`, and `Geometry` unqualified. Because root now aliases them, most files need no change at all. Fix whatever the compiler reports, and nothing else.
+Remaining root files refer to `Mesh`, `FaceColor`, and `Geometry` unqualified; because root aliases them, those references need no change. Fix whatever the compiler still reports, and nothing else.
 
-- [ ] **Step 6: Run the full suite**
+- [ ] **Step 8: Run the full suite**
 
 Run: `go test ./...`
 Expected: PASS for both `github.com/firstlayer-xyz/meshio` and `github.com/firstlayer-xyz/meshio/geom`, with no test assertions changed.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add geom/ mesh.go

@@ -4,11 +4,11 @@ A dependency-free Go library for reading and writing triangle meshes: **3MF**, *
 
 ```go
 mesh, err := meshio.Read("model.3mf")   // format from extension
-err = mesh.Write3MF("out.3mf")
+err = meshio.Write3MF("out.3mf", mesh)
 
 // or stream
 mesh, err := meshio.Decode(r, "3mf")
-err = mesh.Encode(w, "stl")
+err = meshio.Encode(w, mesh, "stl")
 ```
 
 `Mesh` is flat geometry plus optional per-triangle color:
@@ -49,7 +49,7 @@ tells the slicer what to *draw*, never what to *print*.
 
 ## What meshio writes today
 
-`Mesh.Encode3MF` writes the **display** channel only — the spec-correct core
+`meshio.Encode3MF` writes the **display** channel only — the spec-correct core
 material extension:
 
 ```xml

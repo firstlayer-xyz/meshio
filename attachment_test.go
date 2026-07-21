@@ -46,7 +46,7 @@ func TestEncode3MF_WritesAttachment(t *testing.T) {
 		Data:        []byte(`{"version":1}`),
 	}}
 	var buf bytes.Buffer
-	if err := m.Encode3MF(&buf); err != nil {
+	if err := Encode3MF(&buf, m); err != nil {
 		t.Fatalf("Encode3MF: %v", err)
 	}
 	data := buf.Bytes()
@@ -73,7 +73,7 @@ func TestDecode3MF_RoundTripsAttachment(t *testing.T) {
 		Data:        want,
 	}}
 	var buf bytes.Buffer
-	if err := m.Encode3MF(&buf); err != nil {
+	if err := Encode3MF(&buf, m); err != nil {
 		t.Fatalf("Encode3MF: %v", err)
 	}
 	got, err := Decode3MF(bytes.NewReader(buf.Bytes()))
@@ -102,7 +102,7 @@ func TestDecode3MF_RoundTripsAttachment(t *testing.T) {
 
 func TestDecode3MF_NoAttachmentsWhenPlain(t *testing.T) {
 	var buf bytes.Buffer
-	if err := triCube().Encode3MF(&buf); err != nil {
+	if err := Encode3MF(&buf, triCube()); err != nil {
 		t.Fatalf("Encode3MF: %v", err)
 	}
 	got, err := Decode3MF(bytes.NewReader(buf.Bytes()))
@@ -121,7 +121,7 @@ func TestEncode3MF_DuplicateAttachmentPathErrors(t *testing.T) {
 		{Path: "Metadata/Facet/project.json", ContentType: "x", Data: []byte("b")},
 	}
 	var buf bytes.Buffer
-	if err := m.Encode3MF(&buf); err == nil {
+	if err := Encode3MF(&buf, m); err == nil {
 		t.Fatal("expected error on duplicate attachment path, got nil")
 	}
 }
