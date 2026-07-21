@@ -1,6 +1,7 @@
 package meshio
 
 import (
+	"archive/zip"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -8,36 +9,6 @@ import (
 	"strconv"
 	"strings"
 )
-
-// parseContentTypeOverrides extracts PartName -> ContentType from the OPC
-// [Content_Types].xml <Override> elements.
-func parseContentTypeOverrides(xmlText string) map[string]string {
-	out := map[string]string{}
-	dec := xml.NewDecoder(strings.NewReader(xmlText))
-	for {
-		tok, err := dec.Token()
-		if err != nil {
-			break
-		}
-		se, ok := tok.(xml.StartElement)
-		if !ok || se.Name.Local != "Override" {
-			continue
-		}
-		var part, ct string
-		for _, a := range se.Attr {
-			switch a.Name.Local {
-			case "PartName":
-				part = a.Value
-			case "ContentType":
-				ct = a.Value
-			}
-		}
-		if part != "" {
-			out[part] = ct
-		}
-	}
-	return out
-}
 
 // meshData holds the raw vertex/index/color data parsed from a <mesh> element.
 type meshData struct {
@@ -71,6 +42,96 @@ type buildItem struct {
 type parsedPart struct {
 	objects    map[string]*modelObject
 	buildItems []buildItem
+}
+
+// Decode3MF reads a 3MF archive from r and returns the mesh.
+// The reader must support io.ReaderAt and io.Seeker for zip decoding,
+// or the full contents will be buffered in memory.
+func Decode3MF(r io.Reader) (*Mesh, error) {
+	ra, size, err := toReaderAt(r)
+	if err != nil {
+		return nil, fmt.Errorf("meshio: reading 3mf: %w", err)
+	}
+	zr, err := zip.NewReader(ra, size)
+	if err != nil {
+		return nil, fmt.Errorf("meshio: opening 3mf zip: %w", err)
+	}
+
+	overrides := map[string]string{}
+	byName := map[string]*zip.File{}
+	for _, f := range zr.File {
+		byName[f.Name] = f
+		if f.Name == "[Content_Types].xml" {
+			rc, err := f.Open()
+			if err != nil {
+				return nil, fmt.Errorf("meshio: opening content types: %w", err)
+			}
+			b, err := io.ReadAll(rc)
+			rc.Close()
+			if err != nil {
+				return nil, fmt.Errorf("meshio: reading content types: %w", err)
+			}
+			overrides = parseContentTypeOverrides(string(b))
+		}
+	}
+
+	partCache := map[string]*parsedPart{}
+	getPart := func(p string) (*parsedPart, error) {
+		name := strings.TrimPrefix(p, "/")
+		if pp, ok := partCache[name]; ok {
+			return pp, nil
+		}
+		f := byName[name]
+		if f == nil {
+			return nil, fmt.Errorf("meshio: 3mf references missing part %q", p)
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("meshio: opening %s: %w", name, err)
+		}
+		pp, err := parseModelPart(rc)
+		rc.Close()
+		if err != nil {
+			return nil, err
+		}
+		partCache[name] = pp
+		return pp, nil
+	}
+
+	rootName := findRootModelPart(zr)
+	if rootName == "" {
+		return nil, fmt.Errorf("meshio: no .model file found in 3mf archive")
+	}
+	root, err := getPart(rootName)
+	if err != nil {
+		return nil, err
+	}
+	mesh, err := resolveBuild(root, getPart)
+	if err != nil {
+		return nil, err
+	}
+
+	var attachments []Attachment
+	for _, f := range zr.File {
+		name := f.Name
+		if strings.HasSuffix(name, ".model") ||
+			name == "[Content_Types].xml" || strings.HasPrefix(name, "_rels/") ||
+			strings.HasSuffix(name, "/.rels") || name == "Metadata/Slic3r_PE_model.config" {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("meshio: opening %s: %w", name, err)
+		}
+		b, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			return nil, fmt.Errorf("meshio: reading %s: %w", name, err)
+		}
+		attachments = append(attachments, Attachment{Path: name, ContentType: overrides["/"+name], Data: b})
+	}
+	mesh.Attachments = attachments
+	return mesh, nil
 }
 
 // parseModelPart parses one 3MF model XML part into its object graph (objects +
