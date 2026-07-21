@@ -68,7 +68,6 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 
 	sb.WriteString(" <resources>\n")
 
-	colorGroupID := 100
 	if hasColors {
 		fmt.Fprintf(&sb, "  <m:colorgroup id=\"%d\">\n", colorGroupID)
 		for _, hex := range palette {
@@ -78,33 +77,12 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 	}
 
 	sb.WriteString("  <object id=\"1\" type=\"model\">\n")
-	sb.WriteString("   <mesh>\n")
-
-	sb.WriteString("    <vertices>\n")
-	for i := 0; i < numVerts; i++ {
-		x := m.Vertices[i*3]
-		y := m.Vertices[i*3+1]
-		z := m.Vertices[i*3+2]
-		fmt.Fprintf(&sb, "     <vertex x=\"%g\" y=\"%g\" z=\"%g\" />\n", x, y, z)
-	}
-	sb.WriteString("    </vertices>\n")
-
-	sb.WriteString("    <triangles>\n")
-	for i := 0; i < numTris; i++ {
-		v1 := m.Indices[i*3]
-		v2 := m.Indices[i*3+1]
-		v3 := m.Indices[i*3+2]
-		if hasColors && faceColorIdx[i] >= 0 {
-			ci := faceColorIdx[i]
-			fmt.Fprintf(&sb, "     <triangle v1=\"%d\" v2=\"%d\" v3=\"%d\" pid=\"%d\" p1=\"%d\" p2=\"%d\" p3=\"%d\" />\n",
-				v1, v2, v3, colorGroupID, ci, ci, ci)
-		} else {
-			fmt.Fprintf(&sb, "     <triangle v1=\"%d\" v2=\"%d\" v3=\"%d\" />\n", v1, v2, v3)
+	writeMeshXML(&sb, m.Geometry, "   ", colorGroupID, func(tri int) int {
+		if !hasColors {
+			return -1
 		}
-	}
-	sb.WriteString("    </triangles>\n")
-
-	sb.WriteString("   </mesh>\n")
+		return faceColorIdx[tri]
+	})
 	sb.WriteString("  </object>\n")
 	sb.WriteString(" </resources>\n")
 
@@ -158,6 +136,34 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 		return fmt.Errorf("meshio: closing zip: %w", err)
 	}
 	return nil
+}
+
+// writeMeshXML serializes geometry as a 3MF <mesh> element, shared by all 3MF
+// writers. colorAt returns the palette index for a triangle, or -1 to omit the
+// pid/p1/p2/p3 color references.
+func writeMeshXML(sb *strings.Builder, g geom.Geometry, indent string, groupID int, colorAt func(tri int) int) {
+	numVerts := len(g.Vertices) / 3
+	numTris := len(g.Indices) / 3
+
+	sb.WriteString(indent + "<mesh>\n")
+	sb.WriteString(indent + " <vertices>\n")
+	for i := 0; i < numVerts; i++ {
+		fmt.Fprintf(sb, indent+"  <vertex x=\"%g\" y=\"%g\" z=\"%g\" />\n",
+			g.Vertices[i*3], g.Vertices[i*3+1], g.Vertices[i*3+2])
+	}
+	sb.WriteString(indent + " </vertices>\n")
+	sb.WriteString(indent + " <triangles>\n")
+	for i := 0; i < numTris; i++ {
+		v1, v2, v3 := g.Indices[i*3], g.Indices[i*3+1], g.Indices[i*3+2]
+		if ci := colorAt(i); ci >= 0 {
+			fmt.Fprintf(sb, indent+"  <triangle v1=\"%d\" v2=\"%d\" v3=\"%d\" pid=\"%d\" p1=\"%d\" p2=\"%d\" p3=\"%d\" />\n",
+				v1, v2, v3, groupID, ci, ci, ci)
+		} else {
+			fmt.Fprintf(sb, indent+"  <triangle v1=\"%d\" v2=\"%d\" v3=\"%d\" />\n", v1, v2, v3)
+		}
+	}
+	sb.WriteString(indent + " </triangles>\n")
+	sb.WriteString(indent + "</mesh>\n")
 }
 
 // Write exports a Mesh to a 3MF file at the given path.
