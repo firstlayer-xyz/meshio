@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/firstlayer-xyz/meshio/geom"
+	"github.com/firstlayer-xyz/meshio/stl"
 )
 
 // Re-exported from geom so callers can use meshio.Mesh without importing geom
@@ -28,7 +29,7 @@ type (
 func Encode(w io.Writer, m *Mesh, format string) error {
 	switch strings.ToLower(format) {
 	case "stl":
-		return EncodeSTL(w, m)
+		return stl.Encode(w, m)
 	case "obj":
 		return EncodeOBJ(w, m, nil)
 	case "3mf":
@@ -43,7 +44,7 @@ func Encode(w io.Writer, m *Mesh, format string) error {
 func Decode(r io.Reader, format string) (*Mesh, error) {
 	switch strings.ToLower(format) {
 	case "stl":
-		return DecodeSTL(r)
+		return stl.Decode(r)
 	case "obj":
 		return DecodeOBJ(r)
 	case "3mf":
@@ -53,23 +54,27 @@ func Decode(r io.Reader, format string) (*Mesh, error) {
 	}
 }
 
-// readers maps a lowercase file extension to its reader. It is the single
-// source of truth for which mesh formats Read (and the desktop app, facetc,
-// and facetrender) treat as importable meshes.
-var readers = map[string]func(string) (*Mesh, error){
-	".stl": ReadSTL,
-	".obj": ReadOBJ,
-	".3mf": Read3MF,
+// readers maps a lowercase file extension to its decoder. It is the single
+// source of truth for which mesh formats Read treats as importable.
+var readers = map[string]func(io.Reader) (*Mesh, error){
+	".stl": stl.Decode,
+	".obj": DecodeOBJ,
+	".3mf": Decode3MF,
 }
 
 // Read reads a mesh file, auto-detecting format from the extension.
 func Read(path string) (*Mesh, error) {
 	ext := strings.ToLower(pathExt(path))
-	r, ok := readers[ext]
+	dec, ok := readers[ext]
 	if !ok {
 		return nil, fmt.Errorf("meshio: unsupported file extension %q", ext)
 	}
-	return r(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("meshio: %w", err)
+	}
+	defer f.Close()
+	return dec(f)
 }
 
 // CanRead reports whether Read can decode the file at path, by extension.
@@ -86,16 +91,6 @@ func ReadExtensions() []string {
 		exts = append(exts, e)
 	}
 	return exts
-}
-
-// ReadSTL reads a binary or ASCII STL file.
-func ReadSTL(path string) (*Mesh, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("meshio: %w", err)
-	}
-	defer f.Close()
-	return DecodeSTL(f)
 }
 
 // ReadOBJ reads a Wavefront OBJ file.

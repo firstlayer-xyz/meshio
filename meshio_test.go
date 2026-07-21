@@ -59,49 +59,6 @@ func TestMergeVertices(t *testing.T) {
 	}
 }
 
-// --- STL ---
-
-func TestSTLRoundTrip(t *testing.T) {
-	orig := triangle()
-	var buf bytes.Buffer
-	if err := EncodeSTL(&buf, orig); err != nil {
-		t.Fatalf("EncodeSTL: %v", err)
-	}
-	decoded, err := DecodeSTL(&buf)
-	if err != nil {
-		t.Fatalf("DecodeSTL: %v", err)
-	}
-	if len(decoded.Indices)/3 != 1 {
-		t.Errorf("STL round-trip: expected 1 triangle, got %d", len(decoded.Indices)/3)
-	}
-	if len(decoded.Vertices)/3 != 3 {
-		t.Errorf("STL round-trip: expected 3 vertices, got %d", len(decoded.Vertices)/3)
-	}
-}
-
-func TestSTLCubeRoundTrip(t *testing.T) {
-	orig := coloredCube()
-	var buf bytes.Buffer
-	if err := EncodeSTL(&buf, orig); err != nil {
-		t.Fatalf("EncodeSTL: %v", err)
-	}
-	decoded, err := DecodeSTL(&buf)
-	if err != nil {
-		t.Fatalf("DecodeSTL: %v", err)
-	}
-	if len(decoded.Indices)/3 != 12 {
-		t.Errorf("STL cube: expected 12 triangles, got %d", len(decoded.Indices)/3)
-	}
-}
-
-func TestSTLEmpty(t *testing.T) {
-	m := &Mesh{}
-	var buf bytes.Buffer
-	if err := EncodeSTL(&buf, m); err == nil {
-		t.Error("EncodeSTL: expected error for empty mesh")
-	}
-}
-
 // --- OBJ ---
 
 func TestOBJRoundTrip(t *testing.T) {
@@ -376,31 +333,6 @@ func TestPathDir(t *testing.T) {
 		if got != tt.dir {
 			t.Errorf("pathDir(%q): expected %q, got %q", tt.path, tt.dir, got)
 		}
-	}
-}
-
-// --- STL ASCII ---
-
-func TestSTLASCIIRoundTrip(t *testing.T) {
-	ascii := `solid test
-  facet normal 0 0 1
-    outer loop
-      vertex 0 0 0
-      vertex 1 0 0
-      vertex 0 1 0
-    endloop
-  endfacet
-endsolid test
-`
-	decoded, err := DecodeSTL(bytes.NewReader([]byte(ascii)))
-	if err != nil {
-		t.Fatalf("DecodeSTL ASCII: %v", err)
-	}
-	if len(decoded.Indices)/3 != 1 {
-		t.Errorf("STL ASCII: expected 1 triangle, got %d", len(decoded.Indices)/3)
-	}
-	if len(decoded.Vertices)/3 != 3 {
-		t.Errorf("STL ASCII: expected 3 vertices, got %d", len(decoded.Vertices)/3)
 	}
 }
 
