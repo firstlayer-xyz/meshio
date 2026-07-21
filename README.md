@@ -203,7 +203,17 @@ err := threemf.WriteBambu("plate.3mf", obj)
 
   Each part must be a genuine solid — see the geometry gotcha above. Splitting a
   colored slab by face color yields zero-thickness patches that will not slice.
-- **PrusaSlicer** has no multi-material output yet.
+- **Targeting PrusaSlicer instead?** Same `Object`, different writer:
+
+```go
+err := threemf.WritePrusa("plate.3mf", obj)
+```
+
+  The two dialects are mutually exclusive and no single file satisfies both.
+  Bambu assembles an object from component objects and binds a slot to each;
+  PrusaSlicer merges everything into one mesh and carves it into volumes by
+  triangle range. PrusaSlicer discards component-only objects before applying
+  configuration, so a Bambu package imports there as a single material.
 - **Do not** assume a correct-looking preview means a correct toolpath. Verify by
   slicing and checking the filament-change count.
 
@@ -213,9 +223,9 @@ err := threemf.WriteBambu("plate.3mf", obj)
 |---|---|
 | Per-face RGB → core colorgroup | works |
 | Read production-extension / multi-part 3MF | works (geometry flattened to one mesh) |
-| Multi-part object with per-part filament slot | works — `threemf.WriteBambu` |
+| Multi-part object with per-part filament slot (Bambu) | works — `threemf.WriteBambu` |
+| Multi-part object with per-part filament slot (PrusaSlicer) | works — `threemf.WritePrusa` |
 | Per-triangle paint (`paint_color` / `mmu_segmentation`) | not implemented, encoding unverified |
-| PrusaSlicer multi-material output | not implemented, needs a verified sample |
 
 ### Provenance
 
