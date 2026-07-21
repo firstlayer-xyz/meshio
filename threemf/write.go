@@ -1,4 +1,4 @@
-package meshio
+package threemf
 
 import (
 	"archive/zip"
@@ -6,10 +6,12 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/firstlayer-xyz/meshio/geom"
 )
 
-// Encode3MF writes the mesh as a 3MF archive to w.
-func Encode3MF(w io.Writer, m *Mesh) error {
+// Encode writes the mesh as a 3MF archive to w.
+func Encode(w io.Writer, m *geom.Mesh) error {
 	m.MergeVertices()
 	numVerts := len(m.Vertices) / 3
 	numTris := len(m.Indices) / 3
@@ -158,14 +160,14 @@ func Encode3MF(w io.Writer, m *Mesh) error {
 	return nil
 }
 
-// Write3MF exports a Mesh to a 3MF file at the given path.
-func Write3MF(path string, m *Mesh) error {
+// Write exports a Mesh to a 3MF file at the given path.
+func Write(path string, m *geom.Mesh) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("meshio: %w", err)
 	}
 	defer f.Close()
-	return Encode3MF(f, m)
+	return Encode(f, m)
 }
 
 func normalizeHex(hex string) string {

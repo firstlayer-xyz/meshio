@@ -13,6 +13,7 @@ import (
 	"github.com/firstlayer-xyz/meshio/geom"
 	"github.com/firstlayer-xyz/meshio/obj"
 	"github.com/firstlayer-xyz/meshio/stl"
+	"github.com/firstlayer-xyz/meshio/threemf"
 )
 
 // Re-exported from geom so callers can use meshio.Mesh without importing geom
@@ -34,7 +35,7 @@ func Encode(w io.Writer, m *Mesh, format string) error {
 	case "obj":
 		return obj.Encode(w, m, nil)
 	case "3mf":
-		return Encode3MF(w, m)
+		return threemf.Encode(w, m)
 	default:
 		return fmt.Errorf("meshio: unsupported format %q", format)
 	}
@@ -49,7 +50,7 @@ func Decode(r io.Reader, format string) (*Mesh, error) {
 	case "obj":
 		return obj.Decode(r)
 	case "3mf":
-		return Decode3MF(r)
+		return threemf.Decode(r)
 	default:
 		return nil, fmt.Errorf("meshio: unsupported format %q", format)
 	}
@@ -60,7 +61,7 @@ func Decode(r io.Reader, format string) (*Mesh, error) {
 var readers = map[string]func(io.Reader) (*Mesh, error){
 	".stl": stl.Decode,
 	".obj": obj.Decode,
-	".3mf": Decode3MF,
+	".3mf": threemf.Decode,
 }
 
 // Read reads a mesh file, auto-detecting format from the extension.
@@ -92,16 +93,6 @@ func ReadExtensions() []string {
 		exts = append(exts, e)
 	}
 	return exts
-}
-
-// Read3MF reads a 3MF file.
-func Read3MF(path string) (*Mesh, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("meshio: %w", err)
-	}
-	defer f.Close()
-	return Decode3MF(f)
 }
 
 // pathExt returns the file extension including the dot.

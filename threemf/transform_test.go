@@ -1,4 +1,4 @@
-package meshio
+package threemf
 
 import "testing"
 

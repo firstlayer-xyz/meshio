@@ -1,4 +1,4 @@
-package meshio
+package threemf
 
 import (
 	"archive/zip"
@@ -129,7 +129,7 @@ func TestDecode3MF_ProductionExtension(t *testing.T) {
 		"3D/3dmodel.model":     rootComponents,
 		"3D/Objects/sub.model": subMesh,
 	})
-	m, err := Decode3MF(bytes.NewReader(data))
+	m, err := Decode(bytes.NewReader(data))
 	if err != nil {
 		t.Fatalf("Decode3MF: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestParseModelPart_BadTransformErrors(t *testing.T) {
 func TestDecode3MF_CycleGuard(t *testing.T) {
 	root := `<?xml version="1.0"?><model xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1" type="model"><components><component objectid="1" transform="1 0 0 0 1 0 0 0 1 0 0 0"/></components></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 0 0 0"/></build></model>`
 	data := make3MF(map[string]string{"[Content_Types].xml": ctXML, "_rels/.rels": relsRoot, "3D/3dmodel.model": root})
-	if _, err := Decode3MF(bytes.NewReader(data)); err == nil {
+	if _, err := Decode(bytes.NewReader(data)); err == nil {
 		t.Error("want error for component cycle, got nil")
 	}
 }
