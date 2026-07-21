@@ -51,14 +51,17 @@ func xmlAttr(s string) string {
 	return buf.String()
 }
 
-// validateAttachmentPaths rejects an attachment list that either repeats a
-// Path or collides with one of the reserved package part names the writer
-// itself is about to emit (e.g. "3D/3dmodel.model"). archive/zip accepts
-// duplicate part names silently, so without this check the resulting
-// package would contain two entries for the same name, and which one a
-// reader resolves is reader-dependent -- an invalid package that looks fine
-// in a zip browser.
-func validateAttachmentPaths(attachments []geom.Attachment, reserved ...string) error {
+// validateAttachments rejects an attachment list that cannot produce a valid
+// OPC package: one that repeats a Path, collides with a reserved package part
+// name the writer itself is about to emit (e.g. "3D/3dmodel.model"), or omits
+// a ContentType.
+//
+// archive/zip accepts duplicate part names silently, so without the path checks
+// the package would contain two entries for the same name, and which one a
+// reader resolves is reader-dependent -- invalid, but fine-looking in a zip
+// browser. An empty ContentType is likewise unrepresentable: it would be
+// written as ContentType="", which a validating reader rejects.
+func validateAttachments(attachments []geom.Attachment, reserved ...string) error {
 	isReserved := make(map[string]bool, len(reserved))
 	for _, r := range reserved {
 		isReserved[r] = true
@@ -71,6 +74,9 @@ func validateAttachmentPaths(attachments []geom.Attachment, reserved ...string) 
 		seen[a.Path] = true
 		if isReserved[a.Path] {
 			return fmt.Errorf("meshio: attachment path %q collides with a reserved 3MF package part", a.Path)
+		}
+		if a.ContentType == "" {
+			return fmt.Errorf("meshio: attachment %q has no ContentType", a.Path)
 		}
 	}
 	return nil
@@ -99,10 +105,20 @@ func addZipBytes(zw *zip.Writer, name string, content []byte) error {
 	return nil
 }
 
-// parseContentTypeOverrides extracts PartName -> ContentType from the OPC
-// [Content_Types].xml <Override> elements.
-func parseContentTypeOverrides(xmlText string) map[string]string {
-	out := map[string]string{}
+// contentTypes is the type declarations from an OPC [Content_Types].xml.
+//
+// OPC declares a part's type two ways: <Default Extension> covers every part
+// with that extension, and <Override PartName> names a single part. Reading
+// only Overrides loses the type of everything declared by extension, which in a
+// real package means the png thumbnails and gcode.
+type contentTypes struct {
+	byPart map[string]string // absolute part name ("/Metadata/x.json") -> type
+	byExt  map[string]string // lowercased extension without dot -> type
+}
+
+// parseContentTypes reads the <Default> and <Override> declarations.
+func parseContentTypes(xmlText string) contentTypes {
+	ct := contentTypes{byPart: map[string]string{}, byExt: map[string]string{}}
 	dec := xml.NewDecoder(strings.NewReader(xmlText))
 	for {
 		tok, err := dec.Token()
@@ -110,23 +126,45 @@ func parseContentTypeOverrides(xmlText string) map[string]string {
 			break
 		}
 		se, ok := tok.(xml.StartElement)
-		if !ok || se.Name.Local != "Override" {
+		if !ok {
 			continue
 		}
-		var part, ct string
+		var part, ext, typ string
 		for _, a := range se.Attr {
 			switch a.Name.Local {
 			case "PartName":
 				part = a.Value
+			case "Extension":
+				ext = a.Value
 			case "ContentType":
-				ct = a.Value
+				typ = a.Value
 			}
 		}
-		if part != "" {
-			out[part] = ct
+		switch se.Name.Local {
+		case "Override":
+			if part != "" {
+				ct.byPart[part] = typ
+			}
+		case "Default":
+			if ext != "" {
+				ct.byExt[strings.ToLower(ext)] = typ
+			}
 		}
 	}
-	return out
+	return ct
+}
+
+// of returns the declared content type for a package-relative part name, or ""
+// if the package declares none. An Override naming the part wins over a Default
+// for its extension, per OPC.
+func (c contentTypes) of(name string) string {
+	if typ, ok := c.byPart["/"+name]; ok {
+		return typ
+	}
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		return c.byExt[strings.ToLower(name[i+1:])]
+	}
+	return ""
 }
 
 // rootModelFromRels returns the package-relative path of the 3MF root model part

@@ -21,7 +21,7 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 		return fmt.Errorf("meshio: empty mesh")
 	}
 
-	if err := validateAttachmentPaths(m.Attachments,
+	if err := validateAttachments(m.Attachments,
 		"[Content_Types].xml", "_rels/.rels", "3D/3dmodel.model"); err != nil {
 		return err
 	}
