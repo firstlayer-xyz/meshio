@@ -116,7 +116,7 @@ func Decode3MF(r io.Reader) (*Mesh, error) {
 		name := f.Name
 		if strings.HasSuffix(name, ".model") ||
 			name == "[Content_Types].xml" || strings.HasPrefix(name, "_rels/") ||
-			strings.HasSuffix(name, "/.rels") || name == "Metadata/Slic3r_PE_model.config" {
+			strings.HasSuffix(name, "/.rels") {
 			continue
 		}
 		rc, err := f.Open()

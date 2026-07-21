@@ -152,15 +152,6 @@ func (m *Mesh) Encode3MF(w io.Writer) error {
 		}
 	}
 
-	if hasColors {
-		modelConfig := buildModelConfig(numTris, faceColorIdx, palette)
-		if modelConfig != "" {
-			if err := addZipEntry(zw, "Metadata/Slic3r_PE_model.config", modelConfig); err != nil {
-				return err
-			}
-		}
-	}
-
 	if err := zw.Close(); err != nil {
 		return fmt.Errorf("meshio: closing zip: %w", err)
 	}
@@ -182,48 +173,4 @@ func normalizeHex(hex string) string {
 		return hex + "FF"
 	}
 	return hex
-}
-
-func buildModelConfig(numTris int, faceColorIdx []int, palette []string) string {
-	if len(faceColorIdx) == 0 {
-		return ""
-	}
-
-	type volumeRange struct {
-		firstTriID int
-		lastTriID  int
-		colorIdx   int
-	}
-
-	var ranges []volumeRange
-	currentColor := faceColorIdx[0]
-	rangeStart := 0
-
-	for i := 1; i < numTris; i++ {
-		if faceColorIdx[i] != currentColor {
-			ranges = append(ranges, volumeRange{rangeStart, i - 1, currentColor})
-			currentColor = faceColorIdx[i]
-			rangeStart = i
-		}
-	}
-	ranges = append(ranges, volumeRange{rangeStart, numTris - 1, currentColor})
-
-	var sb strings.Builder
-	sb.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-	sb.WriteString("<config>\n")
-	sb.WriteString(" <object id=\"1\">\n")
-	for _, r := range ranges {
-		hex := ""
-		if r.colorIdx >= 0 && r.colorIdx < len(palette) {
-			hex = palette[r.colorIdx]
-		}
-		fmt.Fprintf(&sb, "  <volume firstid=\"%d\" lastid=\"%d\">\n", r.firstTriID, r.lastTriID)
-		if hex != "" {
-			fmt.Fprintf(&sb, "   <metadata type=\"slic3r.extruder\" value=\"%s\" />\n", hex)
-		}
-		sb.WriteString("  </volume>\n")
-	}
-	sb.WriteString(" </object>\n")
-	sb.WriteString("</config>\n")
-	return sb.String()
 }

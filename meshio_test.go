@@ -1,6 +1,7 @@
 package meshio
 
 import (
+	"archive/zip"
 	"bytes"
 	"testing"
 )
@@ -235,6 +236,41 @@ func TestThreeMFEmpty(t *testing.T) {
 	if err := m.Encode3MF(&buf); err == nil {
 		t.Error("Encode3MF: expected error for empty mesh")
 	}
+}
+
+func TestEncode3MF_NoSlic3rConfig(t *testing.T) {
+	var buf bytes.Buffer
+	if err := coloredCube().Encode3MF(&buf); err != nil {
+		t.Fatalf("Encode3MF: %v", err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("open zip: %v", err)
+	}
+	for _, f := range zr.File {
+		if f.Name == "Metadata/Slic3r_PE_model.config" {
+			t.Fatal("Encode3MF still writes the inert Slic3r_PE_model.config part")
+		}
+	}
+}
+
+func TestDecode3MF_Slic3rConfigBecomesAttachment(t *testing.T) {
+	data := make3MF(map[string]string{
+		"[Content_Types].xml":             ctXML,
+		"_rels/.rels":                     relsRoot,
+		"3D/3dmodel.model":                partWithMesh,
+		"Metadata/Slic3r_PE_model.config": "<config/>",
+	})
+	m, err := Decode3MF(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("Decode3MF: %v", err)
+	}
+	for _, a := range m.Attachments {
+		if a.Path == "Metadata/Slic3r_PE_model.config" {
+			return
+		}
+	}
+	t.Fatal("Slic3r_PE_model.config was dropped; expected it preserved as an Attachment")
 }
 
 // --- Encode/Decode dispatch ---
