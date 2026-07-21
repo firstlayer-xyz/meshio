@@ -2,6 +2,7 @@ package threemf
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/firstlayer-xyz/meshio/geom"
 )
@@ -52,6 +53,41 @@ func (o *Object) slot(p Part) int {
 		return o.Filament
 	}
 	return 1
+}
+
+// palette returns the ordered distinct display colors and a map from filament
+// slot to palette index.
+//
+// 3MF carries color per triangle while Object stores it per slot, so this is
+// the denormalization step. Slots are visited in ascending order and colors
+// deduped by value, making the result deterministic: encoding the same object
+// twice produces identical bytes.
+func (o *Object) palette() ([]string, map[int]int) {
+	slots := make([]int, 0, len(o.SlotColors))
+	for s := range o.SlotColors {
+		slots = append(slots, s)
+	}
+	sort.Ints(slots)
+
+	var palette []string
+	idxByColor := map[string]int{}
+	idxBySlot := map[int]int{}
+
+	for _, s := range slots {
+		raw := o.SlotColors[s]
+		if raw == "" {
+			continue
+		}
+		normalized := normalizeHex(raw)
+		idx, ok := idxByColor[normalized]
+		if !ok {
+			idx = len(palette)
+			palette = append(palette, normalized)
+			idxByColor[normalized] = idx
+		}
+		idxBySlot[s] = idx
+	}
+	return palette, idxBySlot
 }
 
 // validate reports the first structural problem with the object.

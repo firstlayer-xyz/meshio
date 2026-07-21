@@ -140,6 +140,85 @@ func TestBambu_ValidationPropagates(t *testing.T) {
 	}
 }
 
+func TestBambu_PaletteDedupsByColor(t *testing.T) {
+	o := &Object{
+		Parts: []Part{
+			{Name: "a", Geometry: unitTri(), Filament: 1},
+			{Name: "b", Geometry: unitTri(), Filament: 2},
+			{Name: "c", Geometry: unitTri(), Filament: 3},
+		},
+	}
+	o.SetSlotColor(1, "#FF0000")
+	o.SetSlotColor(2, "#FF0000") // same color, different slot -> one palette entry
+	o.SetSlotColor(3, "#0000FF")
+
+	palette, bySlot := o.palette()
+	if len(palette) != 2 {
+		t.Fatalf("palette: got %d entries %v, want 2 (dedup by color)", len(palette), palette)
+	}
+	if bySlot[1] != bySlot[2] {
+		t.Errorf("slots 1 and 2 share a color but map to %d and %d", bySlot[1], bySlot[2])
+	}
+	if bySlot[3] == bySlot[1] {
+		t.Error("slot 3 has a distinct color but shares a palette index with slot 1")
+	}
+}
+
+func TestBambu_TrianglesReferenceSlotColor(t *testing.T) {
+	o := twoPartObject()
+	o.SetSlotColor(1, "#FF0000")
+	o.SetSlotColor(2, "#0000FF")
+
+	var buf bytes.Buffer
+	if err := EncodeBambu(&buf, o); err != nil {
+		t.Fatalf("EncodeBambu: %v", err)
+	}
+	objects := readZipPart(t, buf.Bytes(), "3D/Objects/object_3.model")
+
+	if !strings.Contains(objects, `<m:color color="#FF0000FF" />`) {
+		t.Errorf("missing normalized slot-1 color in colorgroup:\n%s", objects)
+	}
+	if !strings.Contains(objects, `xmlns:m=`) {
+		t.Error("material extension namespace not declared despite a palette")
+	}
+	refs := allMatches(`p1="(\d+)"`, objects)
+	if len(refs) != 2 {
+		t.Fatalf("expected 2 colored triangles, got %d", len(refs))
+	}
+	if refs[0] == refs[1] {
+		t.Error("parts on different slots must reference different palette entries")
+	}
+}
+
+func TestBambu_NoColorsOmitsColorgroup(t *testing.T) {
+	var buf bytes.Buffer
+	if err := EncodeBambu(&buf, twoPartObject()); err != nil {
+		t.Fatalf("EncodeBambu: %v", err)
+	}
+	objects := readZipPart(t, buf.Bytes(), "3D/Objects/object_3.model")
+	if strings.Contains(objects, "colorgroup") {
+		t.Errorf("no SlotColors set, but a colorgroup was written:\n%s", objects)
+	}
+	if strings.Contains(objects, "pid=") {
+		t.Error("no SlotColors set, but triangles carry pid references")
+	}
+}
+
+func TestBambu_UnmappedSlotIsUncolored(t *testing.T) {
+	o := twoPartObject()
+	o.SetSlotColor(1, "#FF0000") // slot 2 deliberately left unset
+
+	var buf bytes.Buffer
+	if err := EncodeBambu(&buf, o); err != nil {
+		t.Fatalf("EncodeBambu: %v", err)
+	}
+	objects := readZipPart(t, buf.Bytes(), "3D/Objects/object_3.model")
+
+	if len(allMatches(`p1="(\d+)"`, objects)) != 1 {
+		t.Error("expected exactly one colored triangle; the unmapped slot must be uncolored, not an error")
+	}
+}
+
 func allMatches(pattern, s string) []string {
 	re := regexp.MustCompile(pattern)
 	var out []string

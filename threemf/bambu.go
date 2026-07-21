@@ -32,6 +32,7 @@ func EncodeBambu(w io.Writer, o *Object) error {
 
 	containerID := len(o.Parts) + 1
 	objectsPath := fmt.Sprintf("3D/Objects/object_%d.model", containerID)
+	palette, paletteBySlot := o.palette()
 
 	// --- 3D/3dmodel.model: container object + build item ---
 	var root strings.Builder
@@ -60,14 +61,29 @@ func EncodeBambu(w io.Writer, o *Object) error {
 	// --- 3D/Objects/object_N.model: one <object> per part ---
 	var objects strings.Builder
 	objects.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
-	fmt.Fprintf(&objects, `<model unit="millimeter" xml:lang="en-US" xmlns="%s" xmlns:p="%s" requiredextensions="p">`+"\n",
-		nsCore, nsProduction)
+	materialNS := ""
+	if len(palette) > 0 {
+		materialNS = ` xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02"`
+	}
+	fmt.Fprintf(&objects, `<model unit="millimeter" xml:lang="en-US" xmlns="%s" xmlns:p="%s"%s requiredextensions="p">`+"\n",
+		nsCore, nsProduction, materialNS)
 	objects.WriteString(" <resources>\n")
+	if len(palette) > 0 {
+		fmt.Fprintf(&objects, "  <m:colorgroup id=\"%d\">\n", colorGroupID)
+		for _, hexColor := range palette {
+			fmt.Fprintf(&objects, "   <m:color color=\"%s\" />\n", hexColor)
+		}
+		objects.WriteString("  </m:colorgroup>\n")
+	}
 	for i, p := range o.Parts {
 		partID := i + 1
+		colorIdx := -1
+		if idx, ok := paletteBySlot[o.slot(p)]; ok {
+			colorIdx = idx
+		}
 		fmt.Fprintf(&objects, "  <object id=\"%d\" p:UUID=\"%s\" type=\"model\">\n", partID, derivedUUID("partobject", partID))
-		// Uncolored for now; Task 10 supplies the palette index for this part's slot.
-		writeMeshXML(&objects, p.Geometry, "   ", colorGroupID, func(int) int { return -1 })
+		// A part is one slot, so every triangle takes the same palette index.
+		writeMeshXML(&objects, p.Geometry, "   ", colorGroupID, func(int) int { return colorIdx })
 		objects.WriteString("  </object>\n")
 	}
 	objects.WriteString(" </resources>\n")
