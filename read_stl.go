@@ -74,7 +74,7 @@ func decodeSTLBinary(r io.Reader) (*Mesh, error) {
 		indices = append(indices, base, base+1, base+2)
 	}
 
-	m := &Mesh{Vertices: vertices, Indices: indices}
+	m := &Mesh{Geometry: Geometry{Vertices: vertices, Indices: indices}}
 	m.MergeVertices()
 	return m, nil
 }
@@ -111,7 +111,7 @@ func decodeSTLASCII(r io.Reader) (*Mesh, error) {
 		return nil, fmt.Errorf("meshio: no vertices found in ASCII STL")
 	}
 
-	m := &Mesh{Vertices: vertices, Indices: indices}
+	m := &Mesh{Geometry: Geometry{Vertices: vertices, Indices: indices}}
 	m.MergeVertices()
 	return m, nil
 }

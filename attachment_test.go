@@ -10,8 +10,10 @@ import (
 
 func triCube() *Mesh {
 	return &Mesh{
-		Vertices: []float32{0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0},
-		Indices:  []uint32{0, 1, 2, 0, 2, 3},
+		Geometry: Geometry{
+			Vertices: []float32{0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0},
+			Indices:  []uint32{0, 1, 2, 0, 2, 3},
+		},
 	}
 }
 

@@ -68,5 +68,5 @@ func DecodeOBJ(r io.Reader) (*Mesh, error) {
 		return nil, fmt.Errorf("meshio: no vertices found in OBJ")
 	}
 
-	return &Mesh{Vertices: vertices, Indices: indices}, nil
+	return &Mesh{Geometry: Geometry{Vertices: vertices, Indices: indices}}, nil
 }

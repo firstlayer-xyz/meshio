@@ -26,44 +26,13 @@ type Attachment struct {
 	Data        []byte
 }
 
-// Mesh holds triangle geometry and optional per-face colors.
+// Mesh holds triangle geometry, optional per-face display color, and any
+// extra package parts. It is the interchange type: everything Read and
+// Decode return.
 type Mesh struct {
-	Vertices    []float32    // flat xyz positions (len = numVerts * 3)
-	Indices     []uint32     // triangle vertex indices (len = numTris * 3)
-	FaceColors  []FaceColor  // per-triangle color (len = numTris, or nil/empty for no color)
+	Geometry                 // embedded: m.Vertices, m.Indices, m.MergeVertices()
+	FaceColors  []FaceColor  // per-triangle display color (len = numTris, or nil)
 	Attachments []Attachment // extra OPC parts (3MF only); nil for none
-}
-
-// MergeVertices deduplicates coincident vertices by snapping coordinates
-// to a grid and remapping indices. This produces a watertight mesh where
-// adjacent triangles share vertex indices.
-func (m *Mesh) MergeVertices() {
-	numVerts := len(m.Vertices) / 3
-	if numVerts == 0 {
-		return
-	}
-
-	type vertKey struct{ x, y, z float32 }
-	seen := make(map[vertKey]uint32, numVerts)
-	remap := make([]uint32, numVerts)
-	var merged []float32
-
-	for i := 0; i < numVerts; i++ {
-		k := vertKey{m.Vertices[i*3], m.Vertices[i*3+1], m.Vertices[i*3+2]}
-		if idx, ok := seen[k]; ok {
-			remap[i] = idx
-		} else {
-			idx := uint32(len(merged) / 3)
-			seen[k] = idx
-			remap[i] = idx
-			merged = append(merged, k.x, k.y, k.z)
-		}
-	}
-
-	for i := range m.Indices {
-		m.Indices[i] = remap[m.Indices[i]]
-	}
-	m.Vertices = merged
 }
 
 // Encode writes the mesh to w in the specified format.

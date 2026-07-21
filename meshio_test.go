@@ -8,8 +8,10 @@ import (
 // triangle is a simple single-triangle mesh for testing.
 func triangle() *Mesh {
 	return &Mesh{
-		Vertices: []float32{0, 0, 0, 1, 0, 0, 0, 1, 0},
-		Indices:  []uint32{0, 1, 2},
+		Geometry: Geometry{
+			Vertices: []float32{0, 0, 0, 1, 0, 0, 0, 1, 0},
+			Indices:  []uint32{0, 1, 2},
+		},
 	}
 }
 
@@ -34,14 +36,16 @@ func coloredCube() *Mesh {
 	for i := 4; i < 12; i++ {
 		fc[i] = FaceColor{Hex: "#0000FF"}
 	}
-	return &Mesh{Vertices: v, Indices: idx, FaceColors: fc}
+	return &Mesh{Geometry: Geometry{Vertices: v, Indices: idx}, FaceColors: fc}
 }
 
 func TestMergeVertices(t *testing.T) {
 	// Duplicate vertices
 	m := &Mesh{
-		Vertices: []float32{0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0},
-		Indices:  []uint32{0, 1, 2, 2, 1, 3},
+		Geometry: Geometry{
+			Vertices: []float32{0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0},
+			Indices:  []uint32{0, 1, 2, 2, 1, 3},
+		},
 	}
 	m.MergeVertices()
 	numVerts := len(m.Vertices) / 3
