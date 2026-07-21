@@ -393,7 +393,7 @@ Move every `TestOBJ*` function plus `TestParseHexColor`, `TestSanitizeHex`, `Tes
 
 - [ ] **Step 3: Wire up root dispatch**
 
-Add `".obj": obj.Decode` to the `readers` map, and point root's `Decode`/`Encode` OBJ arms at `obj.Decode` / `obj.Encode`. Root's `Encode` passes `nil` for `mtlW`, preserving today's behavior. Delete `ReadOBJ` from root.
+The `readers` map already carries all three extensions (Task 5 kept `.obj`/`.3mf` pointing at root's in-root decoders so `TestCanRead` and `TestReadExtensions` keep passing). Repoint the `.obj` entry at `obj.Decode`, and point root's `Decode`/`Encode` OBJ arms at `obj.Decode` / `obj.Encode`. Root's `Encode` passes `nil` for `mtlW`, preserving today's behavior. Delete `ReadOBJ` from root.
 
 - [ ] **Step 4: Run the full suite**
 
@@ -464,7 +464,7 @@ What remains in root's `meshio_test.go` is `TestEncodeDecodeDispatch`, `TestEnco
 
 - [ ] **Step 3: Wire up root dispatch**
 
-Add `".3mf": threemf.Decode` to the `readers` map and point root's `Decode`/`Encode` 3MF arms at `threemf.Decode` / `threemf.Encode`. Delete `Read3MF` from root.
+Repoint the `readers` map's `.3mf` entry at `threemf.Decode` and point root's `Decode`/`Encode` 3MF arms at `threemf.Decode` / `threemf.Encode`. After this task every entry in the map points at a format package and no format code remains in root. Delete `Read3MF` from root.
 
 Root's `mesh.go` now contains only: the four type aliases, `readers`, `Read`, `CanRead`, `ReadExtensions`, `Decode`, `Encode`, and `pathExt`.
 
