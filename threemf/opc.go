@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/firstlayer-xyz/meshio/geom"
 )
 
 // OPC (Open Packaging Conventions) plumbing shared by the 3MF reader and all
@@ -29,6 +31,49 @@ func toReaderAt(r io.Reader) (io.ReaderAt, int64, error) {
 		return nil, 0, err
 	}
 	return bytes.NewReader(data), int64(len(data)), nil
+}
+
+// xmlAttr escapes s for safe interpolation inside a double-quoted XML
+// attribute value. Every writer that splices free-form data (Object.Name,
+// Part.Name, Attachment.Path, Attachment.ContentType) into a hand-built XML
+// attribute must pass it through here first -- an unescaped "&", "<", or
+// '"' produces XML that fails to parse, silently losing whatever data lived
+// in that attribute (e.g. every filament slot assignment in
+// Metadata/model_settings.config).
+func xmlAttr(s string) string {
+	var buf bytes.Buffer
+	// xml.EscapeText escapes '&', '<', '>', '"', and '\'', which covers both
+	// attribute values and general text content.
+	if err := xml.EscapeText(&buf, []byte(s)); err != nil {
+		// EscapeText only fails if the writer fails; bytes.Buffer never does.
+		panic(fmt.Sprintf("meshio: escaping xml attribute: %v", err))
+	}
+	return buf.String()
+}
+
+// validateAttachmentPaths rejects an attachment list that either repeats a
+// Path or collides with one of the reserved package part names the writer
+// itself is about to emit (e.g. "3D/3dmodel.model"). archive/zip accepts
+// duplicate part names silently, so without this check the resulting
+// package would contain two entries for the same name, and which one a
+// reader resolves is reader-dependent -- an invalid package that looks fine
+// in a zip browser.
+func validateAttachmentPaths(attachments []geom.Attachment, reserved ...string) error {
+	isReserved := make(map[string]bool, len(reserved))
+	for _, r := range reserved {
+		isReserved[r] = true
+	}
+	seen := make(map[string]bool, len(attachments))
+	for _, a := range attachments {
+		if seen[a.Path] {
+			return fmt.Errorf("meshio: duplicate attachment path %q", a.Path)
+		}
+		seen[a.Path] = true
+		if isReserved[a.Path] {
+			return fmt.Errorf("meshio: attachment path %q collides with a reserved 3MF package part", a.Path)
+		}
+	}
+	return nil
 }
 
 func addZipEntry(zw *zip.Writer, name, content string) error {

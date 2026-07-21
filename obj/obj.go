@@ -79,6 +79,7 @@ func Decode(r io.Reader) (*geom.Mesh, error) {
 // Encode writes the mesh as Wavefront OBJ to w.
 // If mtlW is non-nil and the mesh has face colors, material definitions are written to mtlW
 // and a mtllib directive referencing mtlName is included.
+// It mutates m: MergeVertices is called on the caller's mesh as a side effect.
 func Encode(w io.Writer, m *geom.Mesh, mtlW io.Writer) error {
 	m.MergeVertices()
 	numVerts := len(m.Vertices) / 3

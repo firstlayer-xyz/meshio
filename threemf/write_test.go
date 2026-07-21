@@ -8,14 +8,11 @@ import (
 	"github.com/firstlayer-xyz/meshio/geom"
 )
 
-// triangle is a simple single-triangle mesh for testing.
+// triangle is a simple single-triangle mesh for testing. Its geometry is
+// unitTri (object_test.go) wrapped in a Mesh -- same package, so there is no
+// reason for the two to duplicate the same vertex/index literals.
 func triangle() *geom.Mesh {
-	return &geom.Mesh{
-		Geometry: geom.Geometry{
-			Vertices: []float32{0, 0, 0, 1, 0, 0, 0, 1, 0},
-			Indices:  []uint32{0, 1, 2},
-		},
-	}
+	return &geom.Mesh{Geometry: unitTri()}
 }
 
 // coloredCube returns a cube-like mesh (8 verts, 12 tris) with 2 face colors.

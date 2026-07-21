@@ -124,7 +124,7 @@ func Decode(r io.Reader) (*geom.Mesh, error) {
 		name := f.Name
 		if strings.HasSuffix(name, ".model") ||
 			name == "[Content_Types].xml" || strings.HasPrefix(name, "_rels/") ||
-			strings.HasSuffix(name, "/.rels") {
+			strings.HasSuffix(name, "/.rels") || strings.Contains(name, "/_rels/") {
 			continue
 		}
 		rc, err := f.Open()

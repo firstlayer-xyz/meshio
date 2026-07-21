@@ -82,6 +82,31 @@ func TestObjectValidate(t *testing.T) {
 			},
 			want: "duplicate attachment",
 		},
+		{
+			name: "attachment collides with root model part",
+			obj: &Object{
+				Parts:       []Part{{Name: "a", Geometry: unitTri()}},
+				Attachments: []geom.Attachment{{Path: "3D/3dmodel.model"}},
+			},
+			want: "reserved 3MF package part",
+		},
+		{
+			name: "attachment collides with model_settings.config",
+			obj: &Object{
+				Parts:       []Part{{Name: "a", Geometry: unitTri()}},
+				Attachments: []geom.Attachment{{Path: "Metadata/model_settings.config"}},
+			},
+			want: "reserved 3MF package part",
+		},
+		{
+			name: "attachment collides with the generated object part file",
+			obj: &Object{
+				// One part -> containerID = 2 -> 3D/Objects/object_2.model.
+				Parts:       []Part{{Name: "a", Geometry: unitTri()}},
+				Attachments: []geom.Attachment{{Path: "3D/Objects/object_2.model"}},
+			},
+			want: "reserved 3MF package part",
+		},
 	}
 
 	for _, tc := range tests {

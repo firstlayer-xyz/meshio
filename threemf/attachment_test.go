@@ -127,3 +127,20 @@ func TestEncode3MF_DuplicateAttachmentPathErrors(t *testing.T) {
 		t.Fatal("expected error on duplicate attachment path, got nil")
 	}
 }
+
+// TestEncode3MF_ReservedAttachmentPathErrors covers Fix 7: an attachment
+// whose Path collides with a package part the writer itself emits must be
+// rejected, not silently written -- archive/zip accepts duplicate part
+// names, and which one a reader resolves is then reader-dependent.
+func TestEncode3MF_ReservedAttachmentPathErrors(t *testing.T) {
+	for _, reserved := range []string{"3D/3dmodel.model", "[Content_Types].xml", "_rels/.rels"} {
+		t.Run(reserved, func(t *testing.T) {
+			m := triCube()
+			m.Attachments = []geom.Attachment{{Path: reserved, ContentType: "x", Data: []byte("a")}}
+			var buf bytes.Buffer
+			if err := Encode(&buf, m); err == nil {
+				t.Fatalf("expected error on attachment path %q colliding with a reserved part, got nil", reserved)
+			}
+		})
+	}
+}

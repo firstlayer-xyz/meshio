@@ -123,6 +123,7 @@ func decodeSTLASCII(r io.Reader) (*geom.Mesh, error) {
 
 // Encode writes the mesh as binary STL to w.
 // STL does not support per-face color; FaceColors are ignored.
+// It mutates m: MergeVertices is called on the caller's mesh as a side effect.
 func Encode(w io.Writer, m *geom.Mesh) error {
 	m.MergeVertices()
 	numTris := len(m.Indices) / 3

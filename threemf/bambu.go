@@ -25,6 +25,9 @@ const (
 //
 // Unlike Encode, which carries display color only, this produces a file that
 // slices multi-material: each part is bound to a filament slot.
+//
+// Unlike Encode, stl.Encode, and obj.Encode, EncodeBambu does not mutate its
+// input: it never calls MergeVertices on o's part geometry.
 func EncodeBambu(w io.Writer, o *Object) error {
 	if err := o.validate(); err != nil {
 		return err
@@ -42,19 +45,19 @@ func EncodeBambu(w io.Writer, o *Object) error {
 	root.WriteString(` <metadata name="Application">meshio</metadata>` + "\n")
 	root.WriteString(` <metadata name="BambuStudio:3mfVersion">1</metadata>` + "\n")
 	root.WriteString(" <resources>\n")
-	fmt.Fprintf(&root, "  <object id=\"%d\" p:UUID=\"%s\" type=\"model\">\n", containerID, derivedUUID("object", containerID))
+	fmt.Fprintf(&root, "  <object id=\"%d\" p:UUID=\"%s\" type=\"model\">\n", containerID, derivedUUID("object", o.Name, containerID))
 	root.WriteString("   <components>\n")
-	for i := range o.Parts {
+	for i, p := range o.Parts {
 		partID := i + 1
 		fmt.Fprintf(&root, "    <component p:path=\"/%s\" objectid=\"%d\" p:UUID=\"%s\" transform=\"%s\"/>\n",
-			objectsPath, partID, derivedUUID("component", partID), identityXform)
+			objectsPath, partID, derivedUUID("component", p.Name, partID), identityXform)
 	}
 	root.WriteString("   </components>\n")
 	root.WriteString("  </object>\n")
 	root.WriteString(" </resources>\n")
-	fmt.Fprintf(&root, " <build p:UUID=\"%s\">\n", derivedUUID("build", 0))
+	fmt.Fprintf(&root, " <build p:UUID=\"%s\">\n", derivedUUID("build", o.Name, 0))
 	fmt.Fprintf(&root, "  <item objectid=\"%d\" p:UUID=\"%s\" transform=\"%s\" printable=\"1\"/>\n",
-		containerID, derivedUUID("item", containerID), identityXform)
+		containerID, derivedUUID("item", o.Name, containerID), identityXform)
 	root.WriteString(" </build>\n")
 	root.WriteString("</model>\n")
 
@@ -81,7 +84,7 @@ func EncodeBambu(w io.Writer, o *Object) error {
 		if idx, ok := paletteBySlot[o.slot(p)]; ok {
 			colorIdx = idx
 		}
-		fmt.Fprintf(&objects, "  <object id=\"%d\" p:UUID=\"%s\" type=\"model\">\n", partID, derivedUUID("partobject", partID))
+		fmt.Fprintf(&objects, "  <object id=\"%d\" p:UUID=\"%s\" type=\"model\">\n", partID, derivedUUID("partobject", p.Name, partID))
 		// A part is one slot, so every triangle takes the same palette index.
 		writeMeshXML(&objects, p.Geometry, "   ", colorGroupID, func(int) int { return colorIdx })
 		objects.WriteString("  </object>\n")
@@ -100,7 +103,7 @@ func EncodeBambu(w io.Writer, o *Object) error {
 	ct.WriteString(` <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />` + "\n")
 	ct.WriteString(` <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml" />` + "\n")
 	for _, att := range o.Attachments {
-		fmt.Fprintf(&ct, ` <Override PartName="/%s" ContentType="%s" />`+"\n", att.Path, att.ContentType)
+		fmt.Fprintf(&ct, ` <Override PartName="/%s" ContentType="%s" />`+"\n", xmlAttr(att.Path), xmlAttr(att.ContentType))
 	}
 	ct.WriteString("</Types>\n")
 
@@ -157,18 +160,14 @@ func (o *Object) modelSettings(containerID int) string {
 	sb.WriteString("<config>\n")
 	fmt.Fprintf(&sb, "  <object id=\"%d\">\n", containerID)
 	if o.Name != "" {
-		fmt.Fprintf(&sb, "    <metadata key=\"name\" value=\"%s\"/>\n", o.Name)
+		fmt.Fprintf(&sb, "    <metadata key=\"name\" value=\"%s\"/>\n", xmlAttr(o.Name))
 	}
-	objDefault := o.Filament
-	if objDefault <= 0 {
-		objDefault = 1
-	}
-	fmt.Fprintf(&sb, "    <metadata key=\"extruder\" value=\"%d\"/>\n", objDefault)
+	fmt.Fprintf(&sb, "    <metadata key=\"extruder\" value=\"%d\"/>\n", o.defaultSlot())
 	for i, p := range o.Parts {
 		partID := i + 1
 		fmt.Fprintf(&sb, "    <part id=\"%d\" subtype=\"normal_part\">\n", partID)
 		if p.Name != "" {
-			fmt.Fprintf(&sb, "      <metadata key=\"name\" value=\"%s\"/>\n", p.Name)
+			fmt.Fprintf(&sb, "      <metadata key=\"name\" value=\"%s\"/>\n", xmlAttr(p.Name))
 		}
 		sb.WriteString("      <metadata key=\"matrix\" value=\"1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1\"/>\n")
 		fmt.Fprintf(&sb, "      <metadata key=\"extruder\" value=\"%d\"/>\n", o.slot(p))
@@ -182,9 +181,12 @@ func (o *Object) modelSettings(containerID int) string {
 
 // derivedUUID returns a deterministic RFC-4122-shaped UUID for a labelled
 // element. Deterministic rather than random so that encoding the same object
-// twice yields byte-identical output.
-func derivedUUID(label string, index int) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/%d", label, index)))
+// twice yields byte-identical output. The 3MF production extension spec
+// scopes UUID identity to both name and index -- hashing index alone means
+// every two-part object meshio writes shares an identical set of UUIDs
+// regardless of what the object/parts are named, which the spec forbids.
+func derivedUUID(label, name string, index int) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/%s/%d", label, name, index)))
 	b := sum[:16]
 	b[6] = (b[6] & 0x0f) | 0x40 // version 4
 	b[8] = (b[8] & 0x3f) | 0x80 // variant 10

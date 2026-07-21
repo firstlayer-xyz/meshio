@@ -10,7 +10,8 @@ import (
 	"github.com/firstlayer-xyz/meshio/geom"
 )
 
-// Encode writes the mesh as a 3MF archive to w.
+// Encode writes the mesh as a 3MF archive to w. It mutates m: MergeVertices
+// is called on the caller's mesh as a side effect.
 func Encode(w io.Writer, m *geom.Mesh) error {
 	m.MergeVertices()
 	numVerts := len(m.Vertices) / 3
@@ -20,12 +21,9 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 		return fmt.Errorf("meshio: empty mesh")
 	}
 
-	seenAtt := map[string]bool{}
-	for _, att := range m.Attachments {
-		if seenAtt[att.Path] {
-			return fmt.Errorf("meshio: duplicate attachment path %q", att.Path)
-		}
-		seenAtt[att.Path] = true
+	if err := validateAttachmentPaths(m.Attachments,
+		"[Content_Types].xml", "_rels/.rels", "3D/3dmodel.model"); err != nil {
+		return err
 	}
 
 	// Build color palette
@@ -99,7 +97,7 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 	ctBuilder.WriteString(` <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />` + "\n")
 	ctBuilder.WriteString(` <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml" />` + "\n")
 	for _, att := range m.Attachments {
-		fmt.Fprintf(&ctBuilder, ` <Override PartName="/%s" ContentType="%s" />`+"\n", att.Path, att.ContentType)
+		fmt.Fprintf(&ctBuilder, ` <Override PartName="/%s" ContentType="%s" />`+"\n", xmlAttr(att.Path), xmlAttr(att.ContentType))
 	}
 	ctBuilder.WriteString("</Types>\n")
 	contentTypes := ctBuilder.String()
@@ -109,7 +107,7 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 	relsBuilder.WriteString(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` + "\n")
 	relsBuilder.WriteString(` <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" />` + "\n")
 	for i, att := range m.Attachments {
-		fmt.Fprintf(&relsBuilder, ` <Relationship Target="/%s" Id="attachrel%d" Type="http://schemas.firstlayer.xyz/meshio/2026/01/attachment" />`+"\n", att.Path, i)
+		fmt.Fprintf(&relsBuilder, ` <Relationship Target="/%s" Id="attachrel%d" Type="http://schemas.firstlayer.xyz/meshio/2026/01/attachment" />`+"\n", xmlAttr(att.Path), i)
 	}
 	relsBuilder.WriteString("</Relationships>\n")
 	rels := relsBuilder.String()

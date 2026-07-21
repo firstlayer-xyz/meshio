@@ -49,6 +49,13 @@ func (o *Object) slot(p Part) int {
 	if p.Filament > 0 {
 		return p.Filament
 	}
+	return o.defaultSlot()
+}
+
+// defaultSlot resolves the 1-based filament slot for the object itself
+// (and, by extension, any part that doesn't set its own Filament):
+// Object.Filament if positive, else 1.
+func (o *Object) defaultSlot() int {
 	if o.Filament > 0 {
 		return o.Filament
 	}
@@ -106,12 +113,15 @@ func (o *Object) validate() error {
 			return fmt.Errorf("meshio: part %q has negative filament slot %d", p.Name, p.Filament)
 		}
 	}
-	seen := map[string]bool{}
-	for _, a := range o.Attachments {
-		if seen[a.Path] {
-			return fmt.Errorf("meshio: duplicate attachment path %q", a.Path)
-		}
-		seen[a.Path] = true
-	}
-	return nil
+	// containerID mirrors EncodeBambu's computation: it's only valid once
+	// len(o.Parts) > 0, which the check above guarantees.
+	containerID := len(o.Parts) + 1
+	return validateAttachmentPaths(o.Attachments,
+		"[Content_Types].xml",
+		"_rels/.rels",
+		"3D/3dmodel.model",
+		"3D/_rels/3dmodel.model.rels",
+		"Metadata/model_settings.config",
+		fmt.Sprintf("3D/Objects/object_%d.model", containerID),
+	)
 }
