@@ -381,6 +381,30 @@ read_stl.go / write_stl.go / read_obj.go / write_obj.go   (unchanged)
 `rels_3mf.go` folds into `opc_3mf.go`, which is the same concern. Mesh→XML
 serialization is extracted once and shared by both 3MF writers.
 
+> **SUPERSEDED — this section describes a layout that was not built.**
+>
+> The paragraph below argued against sub-packages. That call was overridden
+> during implementation in favour of a split by *format* rather than by
+> display/print purpose. What shipped is five packages: `meshio` (dispatch and
+> type aliases), `meshio/geom` (`Geometry`, `Mesh`, `FaceColor`, `Attachment`),
+> and `meshio/stl`, `meshio/obj`, `meshio/threemf`. Import direction is one-way:
+> `meshio → {stl, obj, threemf} → geom`.
+>
+> The consequence not anticipated here: Go forbids declaring methods on a type
+> defined in another package, and a type alias does not change the defining
+> package. So once `Mesh` moved to `geom`, method-style encoding became
+> impossible anywhere, and every encoder became a package function —
+> `stl.Encode(w, m)` rather than `m.EncodeSTL(w)`, mirroring `png.Encode`. The
+> `Object`/`Part` print types live in `threemf`, because every print writer is a
+> 3MF writer.
+>
+> The file layout and the `EncodeBambu3MF` method signature elsewhere in this
+> spec are likewise superseded; see
+> `docs/superpowers/plans/2026-07-21-meshio-multipart-color.md` for what was
+> actually built. The reasoning in the rest of this document — the two colour
+> channels, colour keyed by slot, the verified Bambu structures — all still
+> holds and was implemented as written.
+
 **Not** split into sub-packages. A `meshio/print` package importing a shared
 `geometry` package would make the display/print boundary compile-enforced, but
 the types are already distinct so the original bug cannot recur, and at this size
