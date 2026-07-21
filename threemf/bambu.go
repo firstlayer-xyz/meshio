@@ -74,7 +74,7 @@ func EncodeBambu(w io.Writer, o *Object) error {
 	if len(palette) > 0 {
 		fmt.Fprintf(&objects, "  <m:colorgroup id=\"%d\">\n", colorGroupID)
 		for _, hexColor := range palette {
-			fmt.Fprintf(&objects, "   <m:color color=\"%s\" />\n", hexColor)
+			fmt.Fprintf(&objects, "   <m:color color=\"%s\" />\n", xmlAttr(hexColor))
 		}
 		objects.WriteString("  </m:colorgroup>\n")
 	}

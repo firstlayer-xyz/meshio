@@ -69,7 +69,7 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 	if hasColors {
 		fmt.Fprintf(&sb, "  <m:colorgroup id=\"%d\">\n", colorGroupID)
 		for _, hex := range palette {
-			fmt.Fprintf(&sb, "   <m:color color=\"%s\" />\n", hex)
+			fmt.Fprintf(&sb, "   <m:color color=\"%s\" />\n", xmlAttr(hex))
 		}
 		sb.WriteString("  </m:colorgroup>\n")
 	}

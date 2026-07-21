@@ -466,3 +466,17 @@ func allMatches(pattern, s string) []string {
 	}
 	return out
 }
+
+// Color values reach XML attributes just as names do, so they need the same
+// escaping. A caller can put anything in SlotColors.
+func TestBambu_EscapesSlotColors(t *testing.T) {
+	o := &Object{Parts: []Part{{Name: "a", Geometry: unitTri(), Filament: 1}}}
+	o.SetSlotColor(1, `#FF0000" x="<y>&z`)
+
+	var buf bytes.Buffer
+	if err := EncodeBambu(&buf, o); err != nil {
+		t.Fatalf("EncodeBambu: %v", err)
+	}
+	objects := readZipPart(t, buf.Bytes(), "3D/Objects/object_2.model")
+	mustParseXML(t, "3D/Objects/object_2.model", objects)
+}
