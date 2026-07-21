@@ -1,16 +1,85 @@
-package meshio
+// Package obj reads and writes Wavefront OBJ meshes. Per-face colors are
+// written as a companion .mtl material library referenced by usemtl.
+package obj
 
 import (
 	"bufio"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
+
+	"github.com/firstlayer-xyz/meshio/geom"
 )
 
-// EncodeOBJ writes the mesh as Wavefront OBJ to w.
+// Decode reads a Wavefront OBJ from r.
+// Only triangular and quad faces are supported; quads are split into two triangles.
+func Decode(r io.Reader) (*geom.Mesh, error) {
+	scanner := bufio.NewScanner(r)
+	var vertices []float32
+	var indices []uint32
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if len(line) == 0 || line[0] == '#' {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+
+		switch fields[0] {
+		case "v":
+			if len(fields) < 4 {
+				continue
+			}
+			x, err1 := strconv.ParseFloat(fields[1], 32)
+			y, err2 := strconv.ParseFloat(fields[2], 32)
+			z, err3 := strconv.ParseFloat(fields[3], 32)
+			if err1 != nil || err2 != nil || err3 != nil {
+				continue
+			}
+			vertices = append(vertices, float32(x), float32(y), float32(z))
+
+		case "f":
+			faceVerts := make([]uint32, 0, len(fields)-1)
+			for _, f := range fields[1:] {
+				// OBJ face can be v, v/vt, v/vt/vn, or v//vn
+				parts := strings.SplitN(f, "/", 2)
+				idx, err := strconv.ParseUint(parts[0], 10, 32)
+				if err != nil {
+					continue
+				}
+				// OBJ indices are 1-based; negative means relative
+				if idx == 0 {
+					continue
+				}
+				faceVerts = append(faceVerts, uint32(idx-1))
+			}
+			// Triangulate: fan from first vertex
+			for i := 2; i < len(faceVerts); i++ {
+				indices = append(indices, faceVerts[0], faceVerts[i-1], faceVerts[i])
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("meshio: reading OBJ: %w", err)
+	}
+
+	if len(vertices) == 0 {
+		return nil, fmt.Errorf("meshio: no vertices found in OBJ")
+	}
+
+	return &geom.Mesh{Geometry: geom.Geometry{Vertices: vertices, Indices: indices}}, nil
+}
+
+// Encode writes the mesh as Wavefront OBJ to w.
 // If mtlW is non-nil and the mesh has face colors, material definitions are written to mtlW
 // and a mtllib directive referencing mtlName is included.
-func EncodeOBJ(w io.Writer, m *Mesh, mtlW io.Writer) error {
+func Encode(w io.Writer, m *geom.Mesh, mtlW io.Writer) error {
 	m.MergeVertices()
 	numVerts := len(m.Vertices) / 3
 	numTris := len(m.Indices) / 3
@@ -58,7 +127,7 @@ func EncodeOBJ(w io.Writer, m *Mesh, mtlW io.Writer) error {
 }
 
 // encodeMtl writes MTL material definitions to w.
-func encodeMtl(m *Mesh, w io.Writer) error {
+func encodeMtl(m *geom.Mesh, w io.Writer) error {
 	bw := bufio.NewWriter(w)
 	seen := make(map[string]bool)
 	for _, fc := range m.FaceColors {
@@ -74,9 +143,19 @@ func encodeMtl(m *Mesh, w io.Writer) error {
 	return bw.Flush()
 }
 
-// WriteOBJ exports a Mesh to a Wavefront OBJ file at the given path.
+// Read reads a Wavefront OBJ file.
+func Read(path string) (*geom.Mesh, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("meshio: %w", err)
+	}
+	defer f.Close()
+	return Decode(f)
+}
+
+// Write exports a Mesh to a Wavefront OBJ file at the given path.
 // A companion .mtl file is written alongside if face colors are present.
-func WriteOBJ(path string, m *Mesh) error {
+func Write(path string, m *geom.Mesh) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("meshio: %w", err)
@@ -94,7 +173,7 @@ func WriteOBJ(path string, m *Mesh) error {
 		defer mtlFile.Close()
 	}
 
-	return EncodeOBJ(f, m, mtlFile)
+	return Encode(f, m, mtlFile)
 }
 
 // parseHexColor converts "#RRGGBB" or "#RRGGBBAA" to [0,1] floats.

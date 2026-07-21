@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/firstlayer-xyz/meshio/geom"
+	"github.com/firstlayer-xyz/meshio/obj"
 	"github.com/firstlayer-xyz/meshio/stl"
 )
 
@@ -31,7 +32,7 @@ func Encode(w io.Writer, m *Mesh, format string) error {
 	case "stl":
 		return stl.Encode(w, m)
 	case "obj":
-		return EncodeOBJ(w, m, nil)
+		return obj.Encode(w, m, nil)
 	case "3mf":
 		return Encode3MF(w, m)
 	default:
@@ -46,7 +47,7 @@ func Decode(r io.Reader, format string) (*Mesh, error) {
 	case "stl":
 		return stl.Decode(r)
 	case "obj":
-		return DecodeOBJ(r)
+		return obj.Decode(r)
 	case "3mf":
 		return Decode3MF(r)
 	default:
@@ -58,7 +59,7 @@ func Decode(r io.Reader, format string) (*Mesh, error) {
 // source of truth for which mesh formats Read treats as importable.
 var readers = map[string]func(io.Reader) (*Mesh, error){
 	".stl": stl.Decode,
-	".obj": DecodeOBJ,
+	".obj": obj.Decode,
 	".3mf": Decode3MF,
 }
 
@@ -91,16 +92,6 @@ func ReadExtensions() []string {
 		exts = append(exts, e)
 	}
 	return exts
-}
-
-// ReadOBJ reads a Wavefront OBJ file.
-func ReadOBJ(path string) (*Mesh, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("meshio: %w", err)
-	}
-	defer f.Close()
-	return DecodeOBJ(f)
 }
 
 // Read3MF reads a 3MF file.

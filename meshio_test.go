@@ -59,85 +59,6 @@ func TestMergeVertices(t *testing.T) {
 	}
 }
 
-// --- OBJ ---
-
-func TestOBJRoundTrip(t *testing.T) {
-	orig := triangle()
-	var buf bytes.Buffer
-	if err := EncodeOBJ(&buf, orig, nil); err != nil {
-		t.Fatalf("EncodeOBJ: %v", err)
-	}
-	decoded, err := DecodeOBJ(&buf)
-	if err != nil {
-		t.Fatalf("DecodeOBJ: %v", err)
-	}
-	if len(decoded.Indices)/3 != 1 {
-		t.Errorf("OBJ round-trip: expected 1 triangle, got %d", len(decoded.Indices)/3)
-	}
-	if len(decoded.Vertices)/3 != 3 {
-		t.Errorf("OBJ round-trip: expected 3 vertices, got %d", len(decoded.Vertices)/3)
-	}
-}
-
-func TestOBJWithMaterials(t *testing.T) {
-	orig := coloredCube()
-	var objBuf, mtlBuf bytes.Buffer
-	if err := EncodeOBJ(&objBuf, orig, &mtlBuf); err != nil {
-		t.Fatalf("EncodeOBJ: %v", err)
-	}
-	// MTL should contain both colors
-	mtl := mtlBuf.String()
-	if !bytes.Contains([]byte(mtl), []byte("ff0000")) {
-		t.Error("OBJ MTL: missing red material")
-	}
-	if !bytes.Contains([]byte(mtl), []byte("0000ff")) {
-		t.Error("OBJ MTL: missing blue material")
-	}
-	// OBJ should reference mtl
-	obj := objBuf.String()
-	if !bytes.Contains([]byte(obj), []byte("mtllib")) {
-		t.Error("OBJ: missing mtllib directive")
-	}
-	if !bytes.Contains([]byte(obj), []byte("usemtl")) {
-		t.Error("OBJ: missing usemtl directive")
-	}
-}
-
-func TestOBJCubeRoundTrip(t *testing.T) {
-	orig := coloredCube()
-	var buf bytes.Buffer
-	if err := EncodeOBJ(&buf, orig, nil); err != nil {
-		t.Fatalf("EncodeOBJ: %v", err)
-	}
-	decoded, err := DecodeOBJ(&buf)
-	if err != nil {
-		t.Fatalf("DecodeOBJ: %v", err)
-	}
-	if len(decoded.Indices)/3 != 12 {
-		t.Errorf("OBJ cube: expected 12 triangles, got %d", len(decoded.Indices)/3)
-	}
-}
-
-func TestOBJQuadFan(t *testing.T) {
-	obj := "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n"
-	decoded, err := DecodeOBJ(bytes.NewReader([]byte(obj)))
-	if err != nil {
-		t.Fatalf("DecodeOBJ quad: %v", err)
-	}
-	// Quad should be split into 2 triangles
-	if len(decoded.Indices)/3 != 2 {
-		t.Errorf("OBJ quad: expected 2 triangles, got %d", len(decoded.Indices)/3)
-	}
-}
-
-func TestOBJEmpty(t *testing.T) {
-	m := &Mesh{}
-	var buf bytes.Buffer
-	if err := EncodeOBJ(&buf, m, nil); err == nil {
-		t.Error("EncodeOBJ: expected error for empty mesh")
-	}
-}
-
 // --- 3MF ---
 
 func TestThreeMFRoundTrip(t *testing.T) {
@@ -280,20 +201,6 @@ func TestDecodeUnsupported(t *testing.T) {
 
 // --- Helpers ---
 
-func TestParseHexColor(t *testing.T) {
-	r, g, b := parseHexColor("#FF8000")
-	if r != 1.0 || g < 0.50 || g > 0.51 || b != 0 {
-		t.Errorf("parseHexColor(#FF8000): got %g, %g, %g", r, g, b)
-	}
-}
-
-func TestSanitizeHex(t *testing.T) {
-	got := sanitizeHex("#FF00AA")
-	if got != "ff00aa" {
-		t.Errorf("sanitizeHex: expected ff00aa, got %s", got)
-	}
-}
-
 func TestPathExt(t *testing.T) {
 	tests := []struct{ path, ext string }{
 		{"/foo/bar.stl", ".stl"},
@@ -305,33 +212,6 @@ func TestPathExt(t *testing.T) {
 		got := pathExt(tt.path)
 		if got != tt.ext {
 			t.Errorf("pathExt(%q): expected %q, got %q", tt.path, tt.ext, got)
-		}
-	}
-}
-
-func TestPathStem(t *testing.T) {
-	tests := []struct{ path, stem string }{
-		{"/foo/bar.stl", "bar"},
-		{"model.3mf", "model"},
-		{"noext", "noext"},
-	}
-	for _, tt := range tests {
-		got := pathStem(tt.path)
-		if got != tt.stem {
-			t.Errorf("pathStem(%q): expected %q, got %q", tt.path, tt.stem, got)
-		}
-	}
-}
-
-func TestPathDir(t *testing.T) {
-	tests := []struct{ path, dir string }{
-		{"/foo/bar.stl", "/foo"},
-		{"bar.stl", "."},
-	}
-	for _, tt := range tests {
-		got := pathDir(tt.path)
-		if got != tt.dir {
-			t.Errorf("pathDir(%q): expected %q, got %q", tt.path, tt.dir, got)
 		}
 	}
 }
