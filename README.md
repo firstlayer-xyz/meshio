@@ -4,21 +4,41 @@ A dependency-free Go library for reading and writing triangle meshes: **3MF**, *
 
 ```go
 mesh, err := meshio.Read("model.3mf")   // format from extension
-err = meshio.Write3MF("out.3mf", mesh)
+err = threemf.Write("out.3mf", mesh)
 
-// or stream
-mesh, err := meshio.Decode(r, "3mf")
-err = meshio.Encode(w, mesh, "stl")
+// or per format
+mesh, err := stl.Decode(r)
+err = obj.Encode(w, mesh, mtlWriter)
 ```
 
-`Mesh` is flat geometry plus optional per-triangle color:
+## Packages
+
+| Package | Holds |
+|---|---|
+| `meshio` | `Read`, `Decode`, `Encode` dispatch; type aliases for the `geom` types |
+| `meshio/geom` | `Geometry`, `Mesh`, `FaceColor`, `Attachment` |
+| `meshio/stl` | STL read/write |
+| `meshio/obj` | OBJ read/write, `.mtl` materials |
+| `meshio/threemf` | 3MF read/write, plus `Object`/`Part` for multi-material output |
+
+Import direction is one-way: `meshio → {stl, obj, threemf} → geom`.
 
 ```go
+type Geometry struct {
+    Vertices []float32 // xyz triples, len = numVerts*3
+    Indices  []uint32  // triangle indices, len = numTris*3
+}
+
 type Mesh struct {
-    Vertices    []float32    // xyz triples, len = numVerts*3
-    Indices     []uint32     // triangle indices, len = numTris*3
+    Geometry                 // display/interchange: "draw this red"
     FaceColors  []FaceColor  // len = numTris, or nil
-    Attachments []Attachment // extra OPC parts (3MF only)
+    Attachments []Attachment
+}
+
+type Object struct {          // printing: "print this with slot 3"
+    Parts      []Part
+    SlotColors map[int]string // slot number → display color
+    // ...
 }
 ```
 
@@ -49,7 +69,7 @@ tells the slicer what to *draw*, never what to *print*.
 
 ## What meshio writes today
 
-`meshio.Encode3MF` writes the **display** channel only — the spec-correct core
+`threemf.Encode` writes the **display** channel only — the spec-correct core
 material extension:
 
 ```xml
@@ -69,11 +89,6 @@ Consequences:
 - **PrusaSlicer** (not verified here): its importer reads `basematerials` for
   whole-volume material assignment, but is not expected to turn per-triangle
   colorgroup references into MMU paint.
-
-There is also a `Metadata/Slic3r_PE_model.config` part written alongside. **It is
-inert.** It emits `<metadata type="slic3r.extruder" value="#RRGGBBFF">`, whereas
-PrusaSlicer expects `<metadata type="volume" key="extruder" value="2">` — a slot
-index, not a hex color. Nothing reads it. Do not rely on it.
 
 ## What the slicers actually consume
 
@@ -170,11 +185,25 @@ it needs no geometry change at all.
 
 ## Practical guidance today
 
-- **Want color in a viewer, or interchange between tools?** `FaceColors` +
-  `Encode3MF` is correct and sufficient.
-- **Want a multi-color print?** meshio cannot yet emit either slot mechanism.
-  Export the geometry and assign filaments by hand in the slicer, or split the
-  model into per-color solids and assign each in the slicer.
+- **Want color in a viewer, or interchange between tools?** `Mesh.FaceColors` +
+  `threemf.Encode` is correct and sufficient.
+- **Want a multi-color print?** Build an `Object` whose parts are separate
+  solids, assign each a filament slot, and use `threemf.WriteBambu`:
+
+```go
+obj := &threemf.Object{Name: "plate", Filament: 1}
+obj.SetSlotColor(1, "#000000")
+obj.SetSlotColor(2, "#C81E1E")
+obj.Parts = []threemf.Part{
+    {Name: "base", Geometry: baseSlab},               // inherits slot 1
+    {Name: "red",  Geometry: redTiles, Filament: 2},
+}
+err := threemf.WriteBambu("plate.3mf", obj)
+```
+
+  Each part must be a genuine solid — see the geometry gotcha above. Splitting a
+  colored slab by face color yields zero-thickness patches that will not slice.
+- **PrusaSlicer** has no multi-material output yet.
 - **Do not** assume a correct-looking preview means a correct toolpath. Verify by
   slicing and checking the filament-change count.
 
@@ -184,9 +213,9 @@ it needs no geometry change at all.
 |---|---|
 | Per-face RGB → core colorgroup | works |
 | Read production-extension / multi-part 3MF | works (geometry flattened to one mesh) |
-| Multi-part object with per-part filament slot | not implemented |
+| Multi-part object with per-part filament slot | works — `threemf.WriteBambu` |
 | Per-triangle paint (`paint_color` / `mmu_segmentation`) | not implemented, encoding unverified |
-| `Metadata/Slic3r_PE_model.config` | written but inert — slated for removal |
+| PrusaSlicer multi-material output | not implemented, needs a verified sample |
 
 ### Provenance
 
