@@ -65,7 +65,7 @@ func Decode(r io.Reader) (*geom.Mesh, error) {
 		return nil, fmt.Errorf("meshio: opening 3mf zip: %w", err)
 	}
 
-	overrides := map[string]string{}
+	types := contentTypes{byPart: map[string]string{}, byExt: map[string]string{}}
 	byName := map[string]*zip.File{}
 	for _, f := range zr.File {
 		byName[f.Name] = f
@@ -79,7 +79,7 @@ func Decode(r io.Reader) (*geom.Mesh, error) {
 			if err != nil {
 				return nil, fmt.Errorf("meshio: reading content types: %w", err)
 			}
-			overrides = parseContentTypeOverrides(string(b))
+			types = parseContentTypes(string(b))
 		}
 	}
 
@@ -136,7 +136,7 @@ func Decode(r io.Reader) (*geom.Mesh, error) {
 		if err != nil {
 			return nil, fmt.Errorf("meshio: reading %s: %w", name, err)
 		}
-		attachments = append(attachments, geom.Attachment{Path: name, ContentType: overrides["/"+name], Data: b})
+		attachments = append(attachments, geom.Attachment{Path: name, ContentType: types.of(name), Data: b})
 	}
 	mesh.Attachments = attachments
 	return mesh, nil

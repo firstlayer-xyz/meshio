@@ -76,8 +76,8 @@ func TestObjectValidate(t *testing.T) {
 			obj: &Object{
 				Parts: []Part{{Name: "a", Geometry: unitTri()}},
 				Attachments: []geom.Attachment{
-					{Path: "Metadata/x.json"},
-					{Path: "Metadata/x.json"},
+					{Path: "Metadata/x.json", ContentType: "application/json"},
+					{Path: "Metadata/x.json", ContentType: "application/json"},
 				},
 			},
 			want: "duplicate attachment",
@@ -86,7 +86,7 @@ func TestObjectValidate(t *testing.T) {
 			name: "attachment collides with root model part",
 			obj: &Object{
 				Parts:       []Part{{Name: "a", Geometry: unitTri()}},
-				Attachments: []geom.Attachment{{Path: "3D/3dmodel.model"}},
+				Attachments: []geom.Attachment{{Path: "3D/3dmodel.model", ContentType: "application/xml"}},
 			},
 			want: "reserved 3MF package part",
 		},
@@ -94,7 +94,7 @@ func TestObjectValidate(t *testing.T) {
 			name: "attachment collides with model_settings.config",
 			obj: &Object{
 				Parts:       []Part{{Name: "a", Geometry: unitTri()}},
-				Attachments: []geom.Attachment{{Path: "Metadata/model_settings.config"}},
+				Attachments: []geom.Attachment{{Path: "Metadata/model_settings.config", ContentType: "application/xml"}},
 			},
 			want: "reserved 3MF package part",
 		},

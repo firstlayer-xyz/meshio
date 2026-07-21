@@ -118,5 +118,5 @@ func (o *Object) validate(reserved ...string) error {
 			return fmt.Errorf("meshio: part %q has negative filament slot %d", p.Name, p.Filament)
 		}
 	}
-	return validateAttachmentPaths(o.Attachments, reserved...)
+	return validateAttachments(o.Attachments, reserved...)
 }

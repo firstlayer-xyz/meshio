@@ -144,3 +144,247 @@ func TestEncode3MF_ReservedAttachmentPathErrors(t *testing.T) {
 		})
 	}
 }
+
+// buildPackageWithDefaultContentType writes a minimal 3MF whose attachment type
+// is declared by <Default Extension>, not <Override>. Real Bambu packages
+// declare png thumbnails and gcode this way.
+func buildPackageWithDefaultContentType(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	add := func(name, body string) {
+		t.Helper()
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("create %s: %v", name, err)
+		}
+		if _, err := io.WriteString(w, body); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	add("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+ <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />
+ <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml" />
+ <Default Extension="png" ContentType="image/png" />
+ <Override PartName="/Metadata/custom.json" ContentType="application/json" />
+</Types>`)
+	add("_rels/.rels", `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+ <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" />
+</Relationships>`)
+	add("3D/3dmodel.model", `<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+ <resources><object id="1" type="model"><mesh>
+  <vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/></vertices>
+  <triangles><triangle v1="0" v2="1" v3="2"/></triangles>
+ </mesh></object></resources>
+ <build><item objectid="1"/></build>
+</model>`)
+	add("Metadata/plate_1.png", "\x89PNG\r\n\x1a\n")
+	add("Metadata/custom.json", `{"a":1}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// An attachment whose content type is declared by <Default Extension> must
+// decode with that type. Losing it means re-encoding writes ContentType="",
+// which is invalid OPC -- so this breaks reading a real Bambu file and writing
+// it back out.
+func TestDecode3MF_ResolvesDefaultContentType(t *testing.T) {
+	m, err := Decode(bytes.NewReader(buildPackageWithDefaultContentType(t)))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	got := map[string]string{}
+	for _, a := range m.Attachments {
+		got[a.Path] = a.ContentType
+	}
+	if ct := got["Metadata/plate_1.png"]; ct != "image/png" {
+		t.Errorf("png declared by <Default Extension>: ContentType = %q, want %q", ct, "image/png")
+	}
+	if ct := got["Metadata/custom.json"]; ct != "application/json" {
+		t.Errorf("json declared by <Override>: ContentType = %q, want %q", ct, "application/json")
+	}
+}
+
+// An <Override> naming a part must win over a <Default> for its extension.
+func TestDecode3MF_OverrideBeatsDefault(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	add := func(name, body string) {
+		w, _ := zw.Create(name)
+		io.WriteString(w, body)
+	}
+	add("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+ <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml" />
+ <Default Extension="dat" ContentType="application/octet-stream" />
+ <Override PartName="/Metadata/special.dat" ContentType="application/x-special" />
+</Types>`)
+	add("_rels/.rels", `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+ <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" />
+</Relationships>`)
+	add("3D/3dmodel.model", `<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+ <resources><object id="1" type="model"><mesh>
+  <vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/></vertices>
+  <triangles><triangle v1="0" v2="1" v3="2"/></triangles>
+ </mesh></object></resources>
+ <build><item objectid="1"/></build>
+</model>`)
+	add("Metadata/plain.dat", "x")
+	add("Metadata/special.dat", "y")
+	zw.Close()
+
+	m, err := Decode(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	got := map[string]string{}
+	for _, a := range m.Attachments {
+		got[a.Path] = a.ContentType
+	}
+	if ct := got["Metadata/special.dat"]; ct != "application/x-special" {
+		t.Errorf("Override must win over Default: ContentType = %q, want %q", ct, "application/x-special")
+	}
+	if ct := got["Metadata/plain.dat"]; ct != "application/octet-stream" {
+		t.Errorf("unoverridden .dat: ContentType = %q, want %q", ct, "application/octet-stream")
+	}
+}
+
+// Re-encoding a decoded package must not emit ContentType="", which is invalid
+// OPC and is what an unresolved <Default> used to produce.
+func TestEncode3MF_RoundTripPreservesDefaultContentType(t *testing.T) {
+	m, err := Decode(bytes.NewReader(buildPackageWithDefaultContentType(t)))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	var out bytes.Buffer
+	if err := Encode(&out, m); err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	ct := readZipPart(t, out.Bytes(), "[Content_Types].xml")
+	if strings.Contains(ct, `ContentType=""`) {
+		t.Errorf("re-encoded package declares an empty ContentType (invalid OPC):\n%s", ct)
+	}
+	if !strings.Contains(ct, "image/png") {
+		t.Errorf("png content type lost on round trip:\n%s", ct)
+	}
+}
+
+// An attachment with no ContentType cannot be declared in OPC -- writing one
+// produces ContentType="", which a validating reader rejects. Catch it at the
+// call rather than emitting a malformed package.
+// An attachment with no ContentType is written, but not declared. Emitting
+// ContentType="" is invalid OPC; leaving the part undeclared is not the same
+// thing, and it is what real packages do -- Bambu declares no type for its
+// .config parts, and EncodeBambu deliberately reproduces that.
+func TestEncode3MF_UndeclaredAttachmentOmitsOverride(t *testing.T) {
+	m := triCube()
+	m.Attachments = []geom.Attachment{
+		{Path: "Metadata/typed.json", ContentType: "application/json", Data: []byte("{}")},
+		{Path: "Metadata/untyped.config", Data: []byte("x")},
+	}
+	var buf bytes.Buffer
+	if err := Encode(&buf, m); err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	ct := readZipPart(t, buf.Bytes(), "[Content_Types].xml")
+	if strings.Contains(ct, `ContentType=""`) {
+		t.Errorf("emitted an empty ContentType (invalid OPC):\n%s", ct)
+	}
+	if strings.Contains(ct, "Metadata/untyped.config") {
+		t.Errorf("declared a part with no ContentType:\n%s", ct)
+	}
+	if !strings.Contains(ct, `PartName="/Metadata/typed.json" ContentType="application/json"`) {
+		t.Errorf("typed attachment lost its declaration:\n%s", ct)
+	}
+	// The part itself must still be in the package.
+	if got := readZipPart(t, buf.Bytes(), "Metadata/untyped.config"); got != "x" {
+		t.Errorf("undeclared attachment data = %q, want %q", got, "x")
+	}
+}
+
+func TestBambu_UndeclaredAttachmentOmitsOverride(t *testing.T) {
+	o := twoPartObject()
+	o.Attachments = []geom.Attachment{{Path: "Metadata/extra.config", Data: []byte("{}")}}
+	var buf bytes.Buffer
+	if err := EncodeBambu(&buf, o); err != nil {
+		t.Fatalf("EncodeBambu: %v", err)
+	}
+	ct := readZipPart(t, buf.Bytes(), "[Content_Types].xml")
+	if strings.Contains(ct, `ContentType=""`) {
+		t.Errorf("emitted an empty ContentType:\n%s", ct)
+	}
+}
+
+// meshio must be able to read its own Bambu output and write it back.
+// EncodeBambu emits Metadata/model_settings.config with no content-type
+// declaration on purpose, matching the verified Bambu reference, so Decode
+// surfaces it as an attachment with an empty ContentType. Rejecting that on
+// re-encode would make the library refuse what it itself produces.
+func TestBambu_SelfRoundTripSurvivesUndeclaredParts(t *testing.T) {
+	var enc bytes.Buffer
+	if err := EncodeBambu(&enc, twoPartObject()); err != nil {
+		t.Fatalf("EncodeBambu: %v", err)
+	}
+	m, err := Decode(bytes.NewReader(enc.Bytes()))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+
+	var undeclared int
+	for _, a := range m.Attachments {
+		if a.ContentType == "" {
+			undeclared++
+		}
+	}
+	if undeclared == 0 {
+		t.Fatal("expected at least one undeclared attachment (model_settings.config); test no longer covers its case")
+	}
+
+	var out bytes.Buffer
+	if err := Encode(&out, m); err != nil {
+		t.Fatalf("re-encoding a decoded meshio package failed: %v", err)
+	}
+	ct := readZipPart(t, out.Bytes(), "[Content_Types].xml")
+	if strings.Contains(ct, `ContentType=""`) {
+		t.Errorf("round trip emitted an empty ContentType:\n%s", ct)
+	}
+}
+
+// OPC matches part names case-insensitively, so a package may declare a part
+// with different casing than the zip entry uses.
+func TestContentTypes_PartNameIsCaseInsensitive(t *testing.T) {
+	ct := parseContentTypes(`<?xml version="1.0"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+ <Override PartName="/Metadata/Plate_1.PNG" ContentType="image/png" />
+ <Default Extension="JSON" ContentType="application/json" />
+</Types>`)
+
+	if got := ct.of("Metadata/plate_1.png"); got != "image/png" {
+		t.Errorf("Override should match regardless of case: got %q", got)
+	}
+	if got := ct.of("Metadata/x.json"); got != "application/json" {
+		t.Errorf("Default extension should match regardless of case: got %q", got)
+	}
+}
+
+// A dot in a directory name is not an extension.
+func TestContentTypes_ExtensionScanStopsAtLastSegment(t *testing.T) {
+	ct := parseContentTypes(`<?xml version="1.0"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+ <Default Extension="png" ContentType="image/png" />
+</Types>`)
+
+	if got := ct.of("Metadata/v1.2/readme"); got != "" {
+		t.Errorf("extensionless part in a dotted directory: got %q, want \"\"", got)
+	}
+	if got := ct.of("Metadata/v1.2/thumb.png"); got != "image/png" {
+		t.Errorf("part in a dotted directory: got %q, want image/png", got)
+	}
+}
