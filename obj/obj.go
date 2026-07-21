@@ -78,9 +78,14 @@ func Decode(r io.Reader) (*geom.Mesh, error) {
 
 // Encode writes the mesh as Wavefront OBJ to w.
 // If mtlW is non-nil and the mesh has face colors, material definitions are written to mtlW
-// and a mtllib directive referencing mtlName is included.
+// and a "mtllib <mtlName>" directive is emitted referencing it. mtlName should be the
+// basename the caller will give the .mtl file (mtllib is resolved relative to the .obj
+// file, not as an absolute or caller-relative path), and is unused when mtlW is nil.
+// If mtlW is non-nil and mtlName is empty, Encode returns an error rather than emitting
+// a directive with no target: an mtllib line consumers can't resolve is worse than no
+// mtllib line at all, since it silently discards every face color on read-back.
 // It mutates m: MergeVertices is called on the caller's mesh as a side effect.
-func Encode(w io.Writer, m *geom.Mesh, mtlW io.Writer) error {
+func Encode(w io.Writer, m *geom.Mesh, mtlW io.Writer, mtlName string) error {
 	m.MergeVertices()
 	numVerts := len(m.Vertices) / 3
 	numTris := len(m.Indices) / 3
@@ -89,14 +94,18 @@ func Encode(w io.Writer, m *geom.Mesh, mtlW io.Writer) error {
 		return fmt.Errorf("meshio: empty mesh")
 	}
 
+	hasMtl := mtlW != nil && len(m.FaceColors) == numTris
+	if hasMtl && mtlName == "" {
+		return fmt.Errorf("meshio: mtlName is required when mtlW is non-nil")
+	}
+
 	bw := bufio.NewWriter(w)
 
-	hasMtl := mtlW != nil && len(m.FaceColors) == numTris
 	if hasMtl {
 		if err := encodeMtl(m, mtlW); err != nil {
 			return err
 		}
-		fmt.Fprintf(bw, "mtllib material.mtl\n")
+		fmt.Fprintf(bw, "mtllib %s\n", mtlName)
 	}
 
 	// Vertices
@@ -165,16 +174,17 @@ func Write(path string, m *geom.Mesh) error {
 
 	hasMtl := len(m.FaceColors) == len(m.Indices)/3
 	var mtlFile *os.File
+	var mtlName string
 	if hasMtl {
-		mtlPath := pathDir(path) + "/" + pathStem(path) + ".mtl"
-		mtlFile, err = os.Create(mtlPath)
+		mtlName = pathStem(path) + ".mtl"
+		mtlFile, err = os.Create(pathDir(path) + "/" + mtlName)
 		if err != nil {
 			return fmt.Errorf("meshio: %w", err)
 		}
 		defer mtlFile.Close()
 	}
 
-	return Encode(f, m, mtlFile)
+	return Encode(f, m, mtlFile, mtlName)
 }
 
 // parseHexColor converts "#RRGGBB" or "#RRGGBBAA" to [0,1] floats.

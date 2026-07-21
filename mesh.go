@@ -28,12 +28,16 @@ type (
 
 // Encode writes the mesh to w in the specified format.
 // Supported formats: "stl", "obj", "3mf".
+//
+// For "obj", this writes geometry only: no mtllib directive or companion
+// material file, since Encode has no path to derive one from. Use obj.Write
+// (or obj.Encode directly) for material output.
 func Encode(w io.Writer, m *Mesh, format string) error {
 	switch strings.ToLower(format) {
 	case "stl":
 		return stl.Encode(w, m)
 	case "obj":
-		return obj.Encode(w, m, nil)
+		return obj.Encode(w, m, nil, "")
 	case "3mf":
 		return threemf.Encode(w, m)
 	default:

@@ -3,6 +3,7 @@ package threemf
 import (
 	"archive/zip"
 	"bytes"
+	"path/filepath"
 	"testing"
 
 	"github.com/firstlayer-xyz/meshio/geom"
@@ -83,6 +84,32 @@ func TestThreeMFColorRoundTrip(t *testing.T) {
 		if decoded.FaceColors[i].Hex != "#0000FF" {
 			t.Errorf("3MF color: face %d expected #0000FF, got %s", i, decoded.FaceColors[i].Hex)
 		}
+	}
+}
+
+// TestWriteReadRoundTrip exercises the path-based API: Write then Read,
+// confirming geometry and face colors survive a real file round trip.
+func TestWriteReadRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cube.3mf")
+
+	orig := coloredCube()
+	if err := Write(path, orig); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	decoded, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(decoded.Indices)/3 != 12 {
+		t.Errorf("round trip: expected 12 triangles, got %d", len(decoded.Indices)/3)
+	}
+	if len(decoded.Vertices)/3 != 8 {
+		t.Errorf("round trip: expected 8 vertices, got %d", len(decoded.Vertices)/3)
+	}
+	if len(decoded.FaceColors) != 12 {
+		t.Fatalf("round trip: expected 12 face colors, got %d", len(decoded.FaceColors))
 	}
 }
 

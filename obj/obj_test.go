@@ -2,6 +2,9 @@ package obj
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/firstlayer-xyz/meshio/geom"
@@ -44,7 +47,7 @@ func coloredCube() *geom.Mesh {
 func TestOBJRoundTrip(t *testing.T) {
 	orig := triangle()
 	var buf bytes.Buffer
-	if err := Encode(&buf, orig, nil); err != nil {
+	if err := Encode(&buf, orig, nil, ""); err != nil {
 		t.Fatalf("EncodeOBJ: %v", err)
 	}
 	decoded, err := Decode(&buf)
@@ -62,7 +65,7 @@ func TestOBJRoundTrip(t *testing.T) {
 func TestOBJWithMaterials(t *testing.T) {
 	orig := coloredCube()
 	var objBuf, mtlBuf bytes.Buffer
-	if err := Encode(&objBuf, orig, &mtlBuf); err != nil {
+	if err := Encode(&objBuf, orig, &mtlBuf, "material.mtl"); err != nil {
 		t.Fatalf("EncodeOBJ: %v", err)
 	}
 	// MTL should contain both colors
@@ -73,20 +76,28 @@ func TestOBJWithMaterials(t *testing.T) {
 	if !bytes.Contains([]byte(mtl), []byte("0000ff")) {
 		t.Error("OBJ MTL: missing blue material")
 	}
-	// OBJ should reference mtl
+	// OBJ should reference mtl by the name passed in
 	obj := objBuf.String()
-	if !bytes.Contains([]byte(obj), []byte("mtllib")) {
-		t.Error("OBJ: missing mtllib directive")
+	if !bytes.Contains([]byte(obj), []byte("mtllib material.mtl")) {
+		t.Error("OBJ: missing mtllib directive referencing material.mtl")
 	}
 	if !bytes.Contains([]byte(obj), []byte("usemtl")) {
 		t.Error("OBJ: missing usemtl directive")
 	}
 }
 
+func TestOBJEncodeMtlWNonNilEmptyNameErrors(t *testing.T) {
+	orig := coloredCube()
+	var objBuf, mtlBuf bytes.Buffer
+	if err := Encode(&objBuf, orig, &mtlBuf, ""); err == nil {
+		t.Error("EncodeOBJ: expected error when mtlW is non-nil and mtlName is empty")
+	}
+}
+
 func TestOBJCubeRoundTrip(t *testing.T) {
 	orig := coloredCube()
 	var buf bytes.Buffer
-	if err := Encode(&buf, orig, nil); err != nil {
+	if err := Encode(&buf, orig, nil, ""); err != nil {
 		t.Fatalf("EncodeOBJ: %v", err)
 	}
 	decoded, err := Decode(&buf)
@@ -113,8 +124,61 @@ func TestOBJQuadFan(t *testing.T) {
 func TestOBJEmpty(t *testing.T) {
 	m := &geom.Mesh{}
 	var buf bytes.Buffer
-	if err := Encode(&buf, m, nil); err == nil {
+	if err := Encode(&buf, m, nil, ""); err == nil {
 		t.Error("EncodeOBJ: expected error for empty mesh")
+	}
+}
+
+// TestWriteMtllibReferencesActualFile is the regression test for the bug where
+// Encode emitted a hardcoded "mtllib material.mtl" directive that did not
+// match the .mtl file Write actually created alongside the .obj (named after
+// the .obj's own stem). Because the reference never resolved, every color in
+// an OBJ export was silently lost by any consumer that followed mtllib.
+func TestWriteMtllibReferencesActualFile(t *testing.T) {
+	dir := t.TempDir()
+	objPath := filepath.Join(dir, "plate.obj")
+
+	if err := Write(objPath, coloredCube()); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	mtlPath := filepath.Join(dir, "plate.mtl")
+	if _, err := os.Stat(mtlPath); err != nil {
+		t.Fatalf("expected companion mtl file at %s: %v", mtlPath, err)
+	}
+
+	objBytes, err := os.ReadFile(objPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", objPath, err)
+	}
+
+	const wantLine = "mtllib plate.mtl"
+	if !strings.Contains(string(objBytes), wantLine) {
+		t.Errorf("obj file does not contain %q (the name of the file Write actually created); got:\n%s", wantLine, objBytes)
+	}
+}
+
+// TestWriteReadRoundTrip exercises the path-based API end to end: Write then
+// Read, confirming geometry survives a real file round trip (not just the
+// io.Reader/io.Writer forms the rest of the suite covers).
+func TestWriteReadRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	objPath := filepath.Join(dir, "cube.obj")
+
+	orig := coloredCube()
+	if err := Write(objPath, orig); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	decoded, err := Read(objPath)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(decoded.Indices)/3 != 12 {
+		t.Errorf("round trip: expected 12 triangles, got %d", len(decoded.Indices)/3)
+	}
+	if len(decoded.Vertices)/3 != 8 {
+		t.Errorf("round trip: expected 8 vertices, got %d", len(decoded.Vertices)/3)
 	}
 }
 

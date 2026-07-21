@@ -2,7 +2,12 @@ package meshio
 
 import (
 	"bytes"
+	"path/filepath"
 	"testing"
+
+	"github.com/firstlayer-xyz/meshio/obj"
+	"github.com/firstlayer-xyz/meshio/stl"
+	"github.com/firstlayer-xyz/meshio/threemf"
 )
 
 // triangle is a simple single-triangle mesh for testing.
@@ -45,6 +50,41 @@ func TestEncodeDecodeDispatch(t *testing.T) {
 	}
 	if len(decoded.Indices)/3 != 1 {
 		t.Errorf("Dispatch 3mf: expected 1 triangle, got %d", len(decoded.Indices)/3)
+	}
+}
+
+// TestReadDispatch writes a file of each supported format via that format's
+// own path-based Write function, then confirms meshio.Read auto-detects the
+// format from the extension and decodes it end to end.
+func TestReadDispatch(t *testing.T) {
+	dir := t.TempDir()
+
+	stlPath := filepath.Join(dir, "part.stl")
+	if err := stl.Write(stlPath, triangle()); err != nil {
+		t.Fatalf("stl.Write: %v", err)
+	}
+
+	objPath := filepath.Join(dir, "part.obj")
+	if err := obj.Write(objPath, triangle()); err != nil {
+		t.Fatalf("obj.Write: %v", err)
+	}
+
+	threemfPath := filepath.Join(dir, "part.3mf")
+	if err := threemf.Write(threemfPath, triangle()); err != nil {
+		t.Fatalf("threemf.Write: %v", err)
+	}
+
+	for _, path := range []string{stlPath, objPath, threemfPath} {
+		decoded, err := Read(path)
+		if err != nil {
+			t.Fatalf("Read(%s): %v", path, err)
+		}
+		if len(decoded.Indices)/3 != 1 {
+			t.Errorf("Read(%s): expected 1 triangle, got %d", path, len(decoded.Indices)/3)
+		}
+		if len(decoded.Vertices)/3 != 3 {
+			t.Errorf("Read(%s): expected 3 vertices, got %d", path, len(decoded.Vertices)/3)
+		}
 	}
 }
 

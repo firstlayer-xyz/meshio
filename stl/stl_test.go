@@ -2,6 +2,7 @@ package stl
 
 import (
 	"bytes"
+	"path/filepath"
 	"testing"
 
 	"github.com/firstlayer-xyz/meshio/geom"
@@ -56,6 +57,29 @@ func TestSTLRoundTrip(t *testing.T) {
 	}
 	if len(decoded.Vertices)/3 != 3 {
 		t.Errorf("STL round-trip: expected 3 vertices, got %d", len(decoded.Vertices)/3)
+	}
+}
+
+// TestWriteReadRoundTrip exercises the path-based API: Write then Read,
+// confirming geometry survives a real file round trip.
+func TestWriteReadRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cube.stl")
+
+	orig := coloredCube()
+	if err := Write(path, orig); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	decoded, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(decoded.Indices)/3 != 12 {
+		t.Errorf("round trip: expected 12 triangles, got %d", len(decoded.Indices)/3)
+	}
+	if len(decoded.Vertices)/3 != 8 {
+		t.Errorf("round trip: expected 8 vertices, got %d", len(decoded.Vertices)/3)
 	}
 }
 

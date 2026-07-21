@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"io"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -188,6 +189,43 @@ func TestBambu_GeometryRoundTrip(t *testing.T) {
 	// Two triangles: 6 indices.
 	if len(m.Indices) != 6 {
 		t.Fatalf("round-trip indices: got %d, want 6", len(m.Indices))
+	}
+	for _, want := range [][3]float32{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}} {
+		if !hasVertex(m.Vertices, want[0], want[1], want[2]) {
+			t.Errorf("decoded vertices missing base part vertex %v; got %v", want, m.Vertices)
+		}
+	}
+	for _, want := range [][3]float32{{10, 0, 0}, {11, 0, 0}, {10, 1, 0}} {
+		if !hasVertex(m.Vertices, want[0], want[1], want[2]) {
+			t.Errorf("decoded vertices missing tiles part vertex %v; got %v", want, m.Vertices)
+		}
+	}
+}
+
+// TestWriteBambuReadRoundTrip exercises the path-based API: WriteBambu then
+// the package-level Read, confirming a Bambu multi-part 3MF file written to
+// disk decodes back with geometry from every part intact.
+func TestWriteBambuReadRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plate.3mf")
+
+	o := &Object{
+		Name: "plate",
+		Parts: []Part{
+			{Name: "base", Geometry: unitTri(), Filament: 1},
+			{Name: "tiles", Geometry: offsetTri(10, 0, 0), Filament: 2},
+		},
+	}
+	if err := WriteBambu(path, o); err != nil {
+		t.Fatalf("WriteBambu: %v", err)
+	}
+
+	m, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(m.Indices) != 6 {
+		t.Fatalf("round trip indices: got %d, want 6", len(m.Indices))
 	}
 	for _, want := range [][3]float32{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}} {
 		if !hasVertex(m.Vertices, want[0], want[1], want[2]) {
