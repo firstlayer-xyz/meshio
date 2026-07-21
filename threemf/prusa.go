@@ -152,9 +152,7 @@ func EncodePrusa(w io.Writer, o *Object) error {
 	ct.WriteString(`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` + "\n")
 	ct.WriteString(` <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />` + "\n")
 	ct.WriteString(` <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml" />` + "\n")
-	for _, att := range o.Attachments {
-		fmt.Fprintf(&ct, ` <Override PartName="/%s" ContentType="%s" />`+"\n", xmlAttr(att.Path), xmlAttr(att.ContentType))
-	}
+	writeContentTypeOverrides(&ct, o.Attachments)
 	ct.WriteString("</Types>\n")
 
 	rels := `<?xml version="1.0" encoding="UTF-8"?>` + "\n" +

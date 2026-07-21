@@ -52,15 +52,19 @@ func xmlAttr(s string) string {
 }
 
 // validateAttachments rejects an attachment list that cannot produce a valid
-// OPC package: one that repeats a Path, collides with a reserved package part
-// name the writer itself is about to emit (e.g. "3D/3dmodel.model"), or omits
-// a ContentType.
+// OPC package: one that repeats a Path, or collides with a reserved package
+// part name the writer itself is about to emit (e.g. "3D/3dmodel.model").
 //
-// archive/zip accepts duplicate part names silently, so without the path checks
+// archive/zip accepts duplicate part names silently, so without these checks
 // the package would contain two entries for the same name, and which one a
 // reader resolves is reader-dependent -- invalid, but fine-looking in a zip
-// browser. An empty ContentType is likewise unrepresentable: it would be
-// written as ContentType="", which a validating reader rejects.
+// browser.
+//
+// An empty ContentType is not rejected. Writing ContentType="" would be invalid
+// OPC, but leaving a part undeclared is a different thing and is what real
+// packages do: Bambu Studio declares no type for its .config parts, and
+// EncodeBambu reproduces that deliberately. The writers omit the <Override>
+// instead, so meshio can read a real package and write it back.
 func validateAttachments(attachments []geom.Attachment, reserved ...string) error {
 	isReserved := make(map[string]bool, len(reserved))
 	for _, r := range reserved {
@@ -74,9 +78,6 @@ func validateAttachments(attachments []geom.Attachment, reserved ...string) erro
 		seen[a.Path] = true
 		if isReserved[a.Path] {
 			return fmt.Errorf("meshio: attachment path %q collides with a reserved 3MF package part", a.Path)
-		}
-		if a.ContentType == "" {
-			return fmt.Errorf("meshio: attachment %q has no ContentType", a.Path)
 		}
 	}
 	return nil
@@ -103,6 +104,23 @@ func addZipBytes(zw *zip.Writer, name string, content []byte) error {
 		return fmt.Errorf("meshio: writing %s: %w", name, err)
 	}
 	return nil
+}
+
+// writeContentTypeOverrides emits an <Override> declaring each attachment's
+// type, shared by every 3MF writer.
+//
+// An attachment with no ContentType is skipped rather than declared: OPC has no
+// way to say "this part has no type", and ContentType="" is invalid. The part
+// is still written to the package, just undeclared -- which is what a real
+// Bambu file looks like, and what lets a decoded package be re-encoded.
+func writeContentTypeOverrides(sb *strings.Builder, attachments []geom.Attachment) {
+	for _, att := range attachments {
+		if att.ContentType == "" {
+			continue
+		}
+		fmt.Fprintf(sb, ` <Override PartName="/%s" ContentType="%s" />`+"\n",
+			xmlAttr(att.Path), xmlAttr(att.ContentType))
+	}
 }
 
 // contentTypes is the type declarations from an OPC [Content_Types].xml.
@@ -143,7 +161,7 @@ func parseContentTypes(xmlText string) contentTypes {
 		switch se.Name.Local {
 		case "Override":
 			if part != "" {
-				ct.byPart[part] = typ
+				ct.byPart[strings.ToLower(part)] = typ
 			}
 		case "Default":
 			if ext != "" {
@@ -157,12 +175,22 @@ func parseContentTypes(xmlText string) contentTypes {
 // of returns the declared content type for a package-relative part name, or ""
 // if the package declares none. An Override naming the part wins over a Default
 // for its extension, per OPC.
+//
+// Part names and extensions are both matched case-insensitively, as OPC
+// specifies -- a package may declare "/Metadata/Plate_1.png" for a part stored
+// as "Metadata/plate_1.png".
 func (c contentTypes) of(name string) string {
-	if typ, ok := c.byPart["/"+name]; ok {
+	if typ, ok := c.byPart[strings.ToLower("/"+name)]; ok {
 		return typ
 	}
-	if i := strings.LastIndex(name, "."); i >= 0 {
-		return c.byExt[strings.ToLower(name[i+1:])]
+	// Scan for the extension within the final path segment only: a dot in a
+	// directory name ("Metadata/v1.2/readme") is not an extension.
+	base := name
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	if i := strings.LastIndex(base, "."); i >= 0 {
+		return c.byExt[strings.ToLower(base[i+1:])]
 	}
 	return ""
 }

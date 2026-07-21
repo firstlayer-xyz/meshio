@@ -279,31 +279,112 @@ func TestEncode3MF_RoundTripPreservesDefaultContentType(t *testing.T) {
 // An attachment with no ContentType cannot be declared in OPC -- writing one
 // produces ContentType="", which a validating reader rejects. Catch it at the
 // call rather than emitting a malformed package.
-func TestEncode3MF_EmptyContentTypeErrors(t *testing.T) {
+// An attachment with no ContentType is written, but not declared. Emitting
+// ContentType="" is invalid OPC; leaving the part undeclared is not the same
+// thing, and it is what real packages do -- Bambu declares no type for its
+// .config parts, and EncodeBambu deliberately reproduces that.
+func TestEncode3MF_UndeclaredAttachmentOmitsOverride(t *testing.T) {
 	m := triCube()
-	m.Attachments = []geom.Attachment{{
-		Path: "Metadata/extra.json",
-		Data: []byte("{}"),
-	}}
-	var buf bytes.Buffer
-	err := Encode(&buf, m)
-	if err == nil {
-		t.Fatalf("Encode accepted an attachment with no ContentType; wrote:\n%s",
-			readZipPart(t, buf.Bytes(), "[Content_Types].xml"))
+	m.Attachments = []geom.Attachment{
+		{Path: "Metadata/typed.json", ContentType: "application/json", Data: []byte("{}")},
+		{Path: "Metadata/untyped.config", Data: []byte("x")},
 	}
-	if !strings.Contains(err.Error(), "Metadata/extra.json") {
-		t.Errorf("error should name the offending attachment, got: %v", err)
+	var buf bytes.Buffer
+	if err := Encode(&buf, m); err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	ct := readZipPart(t, buf.Bytes(), "[Content_Types].xml")
+	if strings.Contains(ct, `ContentType=""`) {
+		t.Errorf("emitted an empty ContentType (invalid OPC):\n%s", ct)
+	}
+	if strings.Contains(ct, "Metadata/untyped.config") {
+		t.Errorf("declared a part with no ContentType:\n%s", ct)
+	}
+	if !strings.Contains(ct, `PartName="/Metadata/typed.json" ContentType="application/json"`) {
+		t.Errorf("typed attachment lost its declaration:\n%s", ct)
+	}
+	// The part itself must still be in the package.
+	if got := readZipPart(t, buf.Bytes(), "Metadata/untyped.config"); got != "x" {
+		t.Errorf("undeclared attachment data = %q, want %q", got, "x")
 	}
 }
 
-func TestBambu_EmptyContentTypeErrors(t *testing.T) {
+func TestBambu_UndeclaredAttachmentOmitsOverride(t *testing.T) {
 	o := twoPartObject()
-	o.Attachments = []geom.Attachment{{
-		Path: "Metadata/extra.json",
-		Data: []byte("{}"),
-	}}
+	o.Attachments = []geom.Attachment{{Path: "Metadata/extra.config", Data: []byte("{}")}}
 	var buf bytes.Buffer
-	if err := EncodeBambu(&buf, o); err == nil {
-		t.Fatal("EncodeBambu accepted an attachment with no ContentType")
+	if err := EncodeBambu(&buf, o); err != nil {
+		t.Fatalf("EncodeBambu: %v", err)
+	}
+	ct := readZipPart(t, buf.Bytes(), "[Content_Types].xml")
+	if strings.Contains(ct, `ContentType=""`) {
+		t.Errorf("emitted an empty ContentType:\n%s", ct)
+	}
+}
+
+// meshio must be able to read its own Bambu output and write it back.
+// EncodeBambu emits Metadata/model_settings.config with no content-type
+// declaration on purpose, matching the verified Bambu reference, so Decode
+// surfaces it as an attachment with an empty ContentType. Rejecting that on
+// re-encode would make the library refuse what it itself produces.
+func TestBambu_SelfRoundTripSurvivesUndeclaredParts(t *testing.T) {
+	var enc bytes.Buffer
+	if err := EncodeBambu(&enc, twoPartObject()); err != nil {
+		t.Fatalf("EncodeBambu: %v", err)
+	}
+	m, err := Decode(bytes.NewReader(enc.Bytes()))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+
+	var undeclared int
+	for _, a := range m.Attachments {
+		if a.ContentType == "" {
+			undeclared++
+		}
+	}
+	if undeclared == 0 {
+		t.Fatal("expected at least one undeclared attachment (model_settings.config); test no longer covers its case")
+	}
+
+	var out bytes.Buffer
+	if err := Encode(&out, m); err != nil {
+		t.Fatalf("re-encoding a decoded meshio package failed: %v", err)
+	}
+	ct := readZipPart(t, out.Bytes(), "[Content_Types].xml")
+	if strings.Contains(ct, `ContentType=""`) {
+		t.Errorf("round trip emitted an empty ContentType:\n%s", ct)
+	}
+}
+
+// OPC matches part names case-insensitively, so a package may declare a part
+// with different casing than the zip entry uses.
+func TestContentTypes_PartNameIsCaseInsensitive(t *testing.T) {
+	ct := parseContentTypes(`<?xml version="1.0"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+ <Override PartName="/Metadata/Plate_1.PNG" ContentType="image/png" />
+ <Default Extension="JSON" ContentType="application/json" />
+</Types>`)
+
+	if got := ct.of("Metadata/plate_1.png"); got != "image/png" {
+		t.Errorf("Override should match regardless of case: got %q", got)
+	}
+	if got := ct.of("Metadata/x.json"); got != "application/json" {
+		t.Errorf("Default extension should match regardless of case: got %q", got)
+	}
+}
+
+// A dot in a directory name is not an extension.
+func TestContentTypes_ExtensionScanStopsAtLastSegment(t *testing.T) {
+	ct := parseContentTypes(`<?xml version="1.0"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+ <Default Extension="png" ContentType="image/png" />
+</Types>`)
+
+	if got := ct.of("Metadata/v1.2/readme"); got != "" {
+		t.Errorf("extensionless part in a dotted directory: got %q, want \"\"", got)
+	}
+	if got := ct.of("Metadata/v1.2/thumb.png"); got != "image/png" {
+		t.Errorf("part in a dotted directory: got %q, want image/png", got)
 	}
 }

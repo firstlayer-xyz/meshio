@@ -103,9 +103,7 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 	ctBuilder.WriteString(`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` + "\n")
 	ctBuilder.WriteString(` <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />` + "\n")
 	ctBuilder.WriteString(` <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml" />` + "\n")
-	for _, att := range m.Attachments {
-		fmt.Fprintf(&ctBuilder, ` <Override PartName="/%s" ContentType="%s" />`+"\n", xmlAttr(att.Path), xmlAttr(att.ContentType))
-	}
+	writeContentTypeOverrides(&ctBuilder, m.Attachments)
 	ctBuilder.WriteString("</Types>\n")
 	contentTypes := ctBuilder.String()
 
