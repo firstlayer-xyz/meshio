@@ -1,49 +1,28 @@
-package meshio
+// Package threemf reads and writes 3MF packages. Decode resolves the
+// production extension, flattening components and build-item transforms into a
+// single mesh. Encode writes per-face display color as a core material
+// extension colorgroup; see Object for filament-slot output that slicers
+// consume as multi-material.
+package threemf
 
 import (
+	"archive/zip"
 	"encoding/xml"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
-)
 
-// parseContentTypeOverrides extracts PartName -> ContentType from the OPC
-// [Content_Types].xml <Override> elements.
-func parseContentTypeOverrides(xmlText string) map[string]string {
-	out := map[string]string{}
-	dec := xml.NewDecoder(strings.NewReader(xmlText))
-	for {
-		tok, err := dec.Token()
-		if err != nil {
-			break
-		}
-		se, ok := tok.(xml.StartElement)
-		if !ok || se.Name.Local != "Override" {
-			continue
-		}
-		var part, ct string
-		for _, a := range se.Attr {
-			switch a.Name.Local {
-			case "PartName":
-				part = a.Value
-			case "ContentType":
-				ct = a.Value
-			}
-		}
-		if part != "" {
-			out[part] = ct
-		}
-	}
-	return out
-}
+	"github.com/firstlayer-xyz/meshio/geom"
+)
 
 // meshData holds the raw vertex/index/color data parsed from a <mesh> element.
 type meshData struct {
 	vertices   []float32
 	indices    []uint32
-	faceColors []FaceColor
+	faceColors []geom.FaceColor
 }
 
 // componentRef is a reference from a component object to another object, with
@@ -71,6 +50,106 @@ type buildItem struct {
 type parsedPart struct {
 	objects    map[string]*modelObject
 	buildItems []buildItem
+}
+
+// Decode reads a 3MF archive from r and returns the mesh.
+// The reader must support io.ReaderAt and io.Seeker for zip decoding,
+// or the full contents will be buffered in memory.
+func Decode(r io.Reader) (*geom.Mesh, error) {
+	ra, size, err := toReaderAt(r)
+	if err != nil {
+		return nil, fmt.Errorf("meshio: reading 3mf: %w", err)
+	}
+	zr, err := zip.NewReader(ra, size)
+	if err != nil {
+		return nil, fmt.Errorf("meshio: opening 3mf zip: %w", err)
+	}
+
+	overrides := map[string]string{}
+	byName := map[string]*zip.File{}
+	for _, f := range zr.File {
+		byName[f.Name] = f
+		if f.Name == "[Content_Types].xml" {
+			rc, err := f.Open()
+			if err != nil {
+				return nil, fmt.Errorf("meshio: opening content types: %w", err)
+			}
+			b, err := io.ReadAll(rc)
+			rc.Close()
+			if err != nil {
+				return nil, fmt.Errorf("meshio: reading content types: %w", err)
+			}
+			overrides = parseContentTypeOverrides(string(b))
+		}
+	}
+
+	partCache := map[string]*parsedPart{}
+	getPart := func(p string) (*parsedPart, error) {
+		name := strings.TrimPrefix(p, "/")
+		if pp, ok := partCache[name]; ok {
+			return pp, nil
+		}
+		f := byName[name]
+		if f == nil {
+			return nil, fmt.Errorf("meshio: 3mf references missing part %q", p)
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("meshio: opening %s: %w", name, err)
+		}
+		pp, err := parseModelPart(rc)
+		rc.Close()
+		if err != nil {
+			return nil, err
+		}
+		partCache[name] = pp
+		return pp, nil
+	}
+
+	rootName := findRootModelPart(zr)
+	if rootName == "" {
+		return nil, fmt.Errorf("meshio: no .model file found in 3mf archive")
+	}
+	root, err := getPart(rootName)
+	if err != nil {
+		return nil, err
+	}
+	mesh, err := resolveBuild(root, getPart)
+	if err != nil {
+		return nil, err
+	}
+
+	var attachments []geom.Attachment
+	for _, f := range zr.File {
+		name := f.Name
+		if strings.HasSuffix(name, ".model") ||
+			name == "[Content_Types].xml" || strings.HasPrefix(name, "_rels/") ||
+			strings.HasSuffix(name, "/.rels") || strings.Contains(name, "/_rels/") {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("meshio: opening %s: %w", name, err)
+		}
+		b, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			return nil, fmt.Errorf("meshio: reading %s: %w", name, err)
+		}
+		attachments = append(attachments, geom.Attachment{Path: name, ContentType: overrides["/"+name], Data: b})
+	}
+	mesh.Attachments = attachments
+	return mesh, nil
+}
+
+// Read reads a 3MF file.
+func Read(path string) (*geom.Mesh, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("meshio: %w", err)
+	}
+	defer f.Close()
+	return Decode(f)
 }
 
 // parseModelPart parses one 3MF model XML part into its object graph (objects +
@@ -180,7 +259,7 @@ func parseModelPart(r io.Reader) (*parsedPart, error) {
 							}
 						}
 					}
-					cur.mesh.faceColors = append(cur.mesh.faceColors, FaceColor{Hex: hex})
+					cur.mesh.faceColors = append(cur.mesh.faceColors, geom.FaceColor{Hex: hex})
 				}
 			case "component":
 				if cur != nil {
@@ -228,8 +307,8 @@ const maxComponentDepth = 256
 // resolveBuild walks the root part's build items, recursing through components
 // across parts (parsing referenced parts on demand via getPart), applies the
 // composed transforms, and appends all geometry into one merged Mesh.
-func resolveBuild(root *parsedPart, getPart func(path string) (*parsedPart, error)) (*Mesh, error) {
-	out := &Mesh{}
+func resolveBuild(root *parsedPart, getPart func(path string) (*parsedPart, error)) (*geom.Mesh, error) {
+	out := &geom.Mesh{}
 	var resolve func(part *parsedPart, objID string, acc affine, depth int, seen map[string]bool) error
 	resolve = func(part *parsedPart, objID string, acc affine, depth int, seen map[string]bool) error {
 		if depth > maxComponentDepth {
@@ -302,7 +381,7 @@ func resolveBuild(root *parsedPart, getPart func(path string) (*parsedPart, erro
 
 // normalizeFaceColors strips a fully-FF alpha suffix and drops the slice when no
 // triangle carries color (matching the pre-rework behavior).
-func normalizeFaceColors(m *Mesh) {
+func normalizeFaceColors(m *geom.Mesh) {
 	any := false
 	for _, fc := range m.FaceColors {
 		if fc.Hex != "" {

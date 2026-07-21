@@ -1,4 +1,4 @@
-package meshio
+package threemf
 
 import (
 	"archive/zip"
@@ -6,12 +6,16 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/firstlayer-xyz/meshio/geom"
 )
 
-func triCube() *Mesh {
-	return &Mesh{
-		Vertices: []float32{0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0},
-		Indices:  []uint32{0, 1, 2, 0, 2, 3},
+func triCube() *geom.Mesh {
+	return &geom.Mesh{
+		Geometry: geom.Geometry{
+			Vertices: []float32{0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0},
+			Indices:  []uint32{0, 1, 2, 0, 2, 3},
+		},
 	}
 }
 
@@ -38,13 +42,13 @@ func readZipPart(t *testing.T, data []byte, name string) string {
 
 func TestEncode3MF_WritesAttachment(t *testing.T) {
 	m := triCube()
-	m.Attachments = []Attachment{{
+	m.Attachments = []geom.Attachment{{
 		Path:        "Metadata/Facet/project.json",
 		ContentType: "application/vnd.facet.project+json",
 		Data:        []byte(`{"version":1}`),
 	}}
 	var buf bytes.Buffer
-	if err := m.Encode3MF(&buf); err != nil {
+	if err := Encode(&buf, m); err != nil {
 		t.Fatalf("Encode3MF: %v", err)
 	}
 	data := buf.Bytes()
@@ -65,23 +69,23 @@ func TestEncode3MF_WritesAttachment(t *testing.T) {
 func TestDecode3MF_RoundTripsAttachment(t *testing.T) {
 	m := triCube()
 	want := []byte(`{"version":1,"entry":"Main"}`)
-	m.Attachments = []Attachment{{
+	m.Attachments = []geom.Attachment{{
 		Path:        "Metadata/Facet/project.json",
 		ContentType: "application/vnd.facet.project+json",
 		Data:        want,
 	}}
 	var buf bytes.Buffer
-	if err := m.Encode3MF(&buf); err != nil {
+	if err := Encode(&buf, m); err != nil {
 		t.Fatalf("Encode3MF: %v", err)
 	}
-	got, err := Decode3MF(bytes.NewReader(buf.Bytes()))
+	got, err := Decode(bytes.NewReader(buf.Bytes()))
 	if err != nil {
 		t.Fatalf("Decode3MF: %v", err)
 	}
 	if len(got.Indices) != 6 {
 		t.Fatalf("geometry lost: %d indices", len(got.Indices))
 	}
-	var found *Attachment
+	var found *geom.Attachment
 	for i := range got.Attachments {
 		if got.Attachments[i].Path == "Metadata/Facet/project.json" {
 			found = &got.Attachments[i]
@@ -100,10 +104,10 @@ func TestDecode3MF_RoundTripsAttachment(t *testing.T) {
 
 func TestDecode3MF_NoAttachmentsWhenPlain(t *testing.T) {
 	var buf bytes.Buffer
-	if err := triCube().Encode3MF(&buf); err != nil {
+	if err := Encode(&buf, triCube()); err != nil {
 		t.Fatalf("Encode3MF: %v", err)
 	}
-	got, err := Decode3MF(bytes.NewReader(buf.Bytes()))
+	got, err := Decode(bytes.NewReader(buf.Bytes()))
 	if err != nil {
 		t.Fatalf("Decode3MF: %v", err)
 	}
@@ -114,12 +118,29 @@ func TestDecode3MF_NoAttachmentsWhenPlain(t *testing.T) {
 
 func TestEncode3MF_DuplicateAttachmentPathErrors(t *testing.T) {
 	m := triCube()
-	m.Attachments = []Attachment{
+	m.Attachments = []geom.Attachment{
 		{Path: "Metadata/Facet/project.json", ContentType: "x", Data: []byte("a")},
 		{Path: "Metadata/Facet/project.json", ContentType: "x", Data: []byte("b")},
 	}
 	var buf bytes.Buffer
-	if err := m.Encode3MF(&buf); err == nil {
+	if err := Encode(&buf, m); err == nil {
 		t.Fatal("expected error on duplicate attachment path, got nil")
+	}
+}
+
+// TestEncode3MF_ReservedAttachmentPathErrors covers Fix 7: an attachment
+// whose Path collides with a package part the writer itself emits must be
+// rejected, not silently written -- archive/zip accepts duplicate part
+// names, and which one a reader resolves is then reader-dependent.
+func TestEncode3MF_ReservedAttachmentPathErrors(t *testing.T) {
+	for _, reserved := range []string{"3D/3dmodel.model", "[Content_Types].xml", "_rels/.rels"} {
+		t.Run(reserved, func(t *testing.T) {
+			m := triCube()
+			m.Attachments = []geom.Attachment{{Path: reserved, ContentType: "x", Data: []byte("a")}}
+			var buf bytes.Buffer
+			if err := Encode(&buf, m); err == nil {
+				t.Fatalf("expected error on attachment path %q colliding with a reserved part, got nil", reserved)
+			}
+		})
 	}
 }

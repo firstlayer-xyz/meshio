@@ -1,0 +1,5 @@
+# generated test artifacts
+*.3mf
+*.stl
+*.obj
+*.mtl
