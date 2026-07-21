@@ -54,6 +54,13 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 		}
 	}
 
+	var ids resourceIDs
+	objectID := ids.next()
+	colorGroupID := 0
+	if hasColors {
+		colorGroupID = ids.next()
+	}
+
 	// Build XML
 	var sb strings.Builder
 	sb.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
@@ -74,7 +81,7 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 		sb.WriteString("  </m:colorgroup>\n")
 	}
 
-	sb.WriteString("  <object id=\"1\" type=\"model\">\n")
+	fmt.Fprintf(&sb, "  <object id=\"%d\" type=\"model\">\n", objectID)
 	writeMeshXML(&sb, m.Geometry, "   ", colorGroupID, func(tri int) int {
 		if !hasColors {
 			return -1
@@ -85,7 +92,7 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 	sb.WriteString(" </resources>\n")
 
 	sb.WriteString(" <build>\n")
-	sb.WriteString("  <item objectid=\"1\" />\n")
+	fmt.Fprintf(&sb, "  <item objectid=\"%d\" />\n", objectID)
 	sb.WriteString(" </build>\n")
 	sb.WriteString("</model>\n")
 
@@ -134,6 +141,20 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 		return fmt.Errorf("meshio: closing zip: %w", err)
 	}
 	return nil
+}
+
+// resourceIDs hands out 3MF resource ids. The spec requires every resource in a
+// model part -- objects, colorgroups, basematerials -- to carry an id unique
+// within that part, and triangles bind to a colorgroup by that id via pid. So
+// every id a writer emits has to come from one counter: a hardcoded id is a
+// collision waiting for the part to grow into it.
+type resourceIDs struct{ last int }
+
+// next returns the next unused id. Ids start at 1, leaving 0 free for callers
+// that need an "absent resource" sentinel.
+func (r *resourceIDs) next() int {
+	r.last++
+	return r.last
 }
 
 // writeMeshXML serializes geometry as a 3MF <mesh> element, shared by all 3MF

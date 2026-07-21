@@ -113,15 +113,14 @@ func (o *Object) validate() error {
 			return fmt.Errorf("meshio: part %q has negative filament slot %d", p.Name, p.Filament)
 		}
 	}
-	// containerID mirrors EncodeBambu's computation: it's only valid once
-	// len(o.Parts) > 0, which the check above guarantees.
-	containerID := len(o.Parts) + 1
+	// The objects part is named after the container id, so the reserved list
+	// has to come from the same layout EncodeBambu will emit.
 	return validateAttachmentPaths(o.Attachments,
 		"[Content_Types].xml",
 		"_rels/.rels",
 		"3D/3dmodel.model",
 		"3D/_rels/3dmodel.model.rels",
 		"Metadata/model_settings.config",
-		fmt.Sprintf("3D/Objects/object_%d.model", containerID),
+		o.layout(false).objectsPath,
 	)
 }

@@ -7,8 +7,8 @@ mesh, err := meshio.Read("model.3mf")   // format from extension
 err = threemf.Write("out.3mf", mesh)
 
 // or per format
-mesh, err := stl.Decode(r)
-err = obj.Encode(w, mesh, mtlWriter)
+mesh, err = stl.Decode(r)
+err = obj.Encode(w, mesh, mtlWriter, "model.mtl") // mtlName is required when mtlWriter != nil
 ```
 
 ## Packages
@@ -73,11 +73,11 @@ tells the slicer what to *draw*, never what to *print*.
 material extension:
 
 ```xml
-<m:colorgroup id="100">
+<m:colorgroup id="2">
   <m:color color="#C81E1EFF" />
 </m:colorgroup>
 ...
-<triangle v1="0" v2="21" v3="1" pid="100" p1="0" p2="0" p3="0" />
+<triangle v1="0" v2="21" v3="1" pid="2" p1="0" p2="0" p3="0" />
 ```
 
 Consequences:

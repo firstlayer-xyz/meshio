@@ -3,6 +3,7 @@ package threemf
 import (
 	"bytes"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"path/filepath"
 	"regexp"
@@ -308,6 +309,58 @@ func TestBambu_TrianglesReferenceSlotColor(t *testing.T) {
 	}
 	if refs[0] == refs[1] {
 		t.Error("parts on different slots must reference different palette entries")
+	}
+}
+
+// The colorgroup shares 3D/Objects/object_N.model with the part objects, which
+// are numbered 1..N, so a fixed colorgroup id collides once a plate has enough
+// parts to reach it. A collision makes every triangle's pid ambiguous, so the
+// id must be derived from the part count rather than hardcoded.
+func TestBambu_ColorGroupIDNeverCollidesWithPartIDs(t *testing.T) {
+	const numParts = 150
+
+	o := &Object{Name: "many"}
+	for i := 0; i < numParts; i++ {
+		o.Parts = append(o.Parts, Part{
+			Name:     fmt.Sprintf("part%d", i),
+			Geometry: unitTri(),
+			Filament: 1,
+		})
+	}
+	o.SetSlotColor(1, "#FF0000")
+
+	var buf bytes.Buffer
+	if err := EncodeBambu(&buf, o); err != nil {
+		t.Fatalf("EncodeBambu: %v", err)
+	}
+	objects := readZipPart(t, buf.Bytes(), fmt.Sprintf("3D/Objects/object_%d.model", numParts+1))
+
+	groupIDs := allMatches(`<m:colorgroup id="(\d+)"`, objects)
+	if len(groupIDs) != 1 {
+		t.Fatalf("expected exactly 1 colorgroup, got %d", len(groupIDs))
+	}
+	groupID := groupIDs[0]
+
+	objectIDs := allMatches(`<object id="(\d+)"`, objects)
+	if len(objectIDs) != numParts {
+		t.Fatalf("expected %d part objects, got %d", numParts, len(objectIDs))
+	}
+	for _, id := range objectIDs {
+		if id == groupID {
+			t.Fatalf("colorgroup id %s is also used by a part object; "+
+				"pid=%s references are ambiguous", groupID, id)
+		}
+	}
+
+	// The triangles must still point at the colorgroup after the id moves.
+	pids := allMatches(`pid="(\d+)"`, objects)
+	if len(pids) != numParts {
+		t.Fatalf("expected %d triangles carrying pid, got %d", numParts, len(pids))
+	}
+	for _, pid := range pids {
+		if pid != groupID {
+			t.Fatalf("triangle pid %s does not reference the colorgroup id %s", pid, groupID)
+		}
 	}
 }
 

@@ -16,8 +16,39 @@ const (
 	nsBambu        = "http://schemas.bambulab.com/package/2021"
 	relType3DModel = "http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"
 	identityXform  = "1 0 0 0 1 0 0 0 1 0 0 0"
-	colorGroupID   = 100
 )
+
+// bambuLayout is the id and path assignment for one Bambu package. Every id
+// comes from a single resourceIDs counter, so a part object can never collide
+// with the container or the colorgroup no matter how many parts there are.
+//
+// The container lives in 3D/3dmodel.model while the parts and colorgroup live
+// in 3D/Objects/object_N.model. Ids only have to be unique per model part, but
+// the production extension has components reference parts across files, so the
+// package uses one id space throughout rather than restarting per file.
+type bambuLayout struct {
+	partIDs      []int  // partIDs[i] is the resource id of o.Parts[i]
+	containerID  int    // the components object, also names objectsPath
+	colorGroupID int    // 0 when the object has no slot colors
+	objectsPath  string // package path of the part-geometry model part
+}
+
+// layout assigns the package's resource ids. hasPalette determines only whether
+// a colorgroup id is reserved; part and container ids do not depend on it, so
+// callers that need just a path or the container id may pass false.
+func (o *Object) layout(hasPalette bool) bambuLayout {
+	var ids resourceIDs
+	l := bambuLayout{partIDs: make([]int, len(o.Parts))}
+	for i := range o.Parts {
+		l.partIDs[i] = ids.next()
+	}
+	l.containerID = ids.next()
+	if hasPalette {
+		l.colorGroupID = ids.next()
+	}
+	l.objectsPath = fmt.Sprintf("3D/Objects/object_%d.model", l.containerID)
+	return l
+}
 
 // EncodeBambu writes the object as a Bambu Studio 3MF: a container object whose
 // components are the parts, part geometry in 3D/Objects, and filament slot
@@ -33,9 +64,9 @@ func EncodeBambu(w io.Writer, o *Object) error {
 		return err
 	}
 
-	containerID := len(o.Parts) + 1
-	objectsPath := fmt.Sprintf("3D/Objects/object_%d.model", containerID)
 	palette, paletteBySlot := o.palette()
+	l := o.layout(len(palette) > 0)
+	containerID, objectsPath := l.containerID, l.objectsPath
 
 	// --- 3D/3dmodel.model: container object + build item ---
 	var root strings.Builder
@@ -48,7 +79,7 @@ func EncodeBambu(w io.Writer, o *Object) error {
 	fmt.Fprintf(&root, "  <object id=\"%d\" p:UUID=\"%s\" type=\"model\">\n", containerID, derivedUUID("object", o.Name, containerID))
 	root.WriteString("   <components>\n")
 	for i, p := range o.Parts {
-		partID := i + 1
+		partID := l.partIDs[i]
 		fmt.Fprintf(&root, "    <component p:path=\"/%s\" objectid=\"%d\" p:UUID=\"%s\" transform=\"%s\"/>\n",
 			objectsPath, partID, derivedUUID("component", p.Name, partID), identityXform)
 	}
@@ -72,21 +103,21 @@ func EncodeBambu(w io.Writer, o *Object) error {
 		nsCore, nsProduction, materialNS)
 	objects.WriteString(" <resources>\n")
 	if len(palette) > 0 {
-		fmt.Fprintf(&objects, "  <m:colorgroup id=\"%d\">\n", colorGroupID)
+		fmt.Fprintf(&objects, "  <m:colorgroup id=\"%d\">\n", l.colorGroupID)
 		for _, hexColor := range palette {
 			fmt.Fprintf(&objects, "   <m:color color=\"%s\" />\n", xmlAttr(hexColor))
 		}
 		objects.WriteString("  </m:colorgroup>\n")
 	}
 	for i, p := range o.Parts {
-		partID := i + 1
+		partID := l.partIDs[i]
 		colorIdx := -1
 		if idx, ok := paletteBySlot[o.slot(p)]; ok {
 			colorIdx = idx
 		}
 		fmt.Fprintf(&objects, "  <object id=\"%d\" p:UUID=\"%s\" type=\"model\">\n", partID, derivedUUID("partobject", p.Name, partID))
 		// A part is one slot, so every triangle takes the same palette index.
-		writeMeshXML(&objects, p.Geometry, "   ", colorGroupID, func(int) int { return colorIdx })
+		writeMeshXML(&objects, p.Geometry, "   ", l.colorGroupID, func(int) int { return colorIdx })
 		objects.WriteString("  </object>\n")
 	}
 	objects.WriteString(" </resources>\n")
@@ -94,7 +125,7 @@ func EncodeBambu(w io.Writer, o *Object) error {
 	objects.WriteString("</model>\n")
 
 	// --- Metadata/model_settings.config ---
-	settings := o.modelSettings(containerID)
+	settings := o.modelSettings(l)
 
 	// --- OPC scaffolding ---
 	var ct strings.Builder
@@ -154,18 +185,17 @@ func WriteBambu(path string, o *Object) error {
 
 // modelSettings builds Metadata/model_settings.config: the object default
 // extruder plus one <part> per part, each with its resolved slot.
-func (o *Object) modelSettings(containerID int) string {
+func (o *Object) modelSettings(l bambuLayout) string {
 	var sb strings.Builder
 	sb.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	sb.WriteString("<config>\n")
-	fmt.Fprintf(&sb, "  <object id=\"%d\">\n", containerID)
+	fmt.Fprintf(&sb, "  <object id=\"%d\">\n", l.containerID)
 	if o.Name != "" {
 		fmt.Fprintf(&sb, "    <metadata key=\"name\" value=\"%s\"/>\n", xmlAttr(o.Name))
 	}
 	fmt.Fprintf(&sb, "    <metadata key=\"extruder\" value=\"%d\"/>\n", o.defaultSlot())
 	for i, p := range o.Parts {
-		partID := i + 1
-		fmt.Fprintf(&sb, "    <part id=\"%d\" subtype=\"normal_part\">\n", partID)
+		fmt.Fprintf(&sb, "    <part id=\"%d\" subtype=\"normal_part\">\n", l.partIDs[i])
 		if p.Name != "" {
 			fmt.Fprintf(&sb, "      <metadata key=\"name\" value=\"%s\"/>\n", xmlAttr(p.Name))
 		}
