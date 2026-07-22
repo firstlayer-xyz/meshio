@@ -33,6 +33,37 @@ func TestSlotColorPaletteDedupsByColor(t *testing.T) {
 	}
 }
 
+// TestSlotColorPaletteOrderIsDeterministic guards the sort.Ints(slots) call in
+// slotColorPalette. Without it, Go's randomized map iteration order would let
+// the palette come out in a different order on different runs, and 3MF output
+// would not be byte-reproducible.
+//
+// It uses three slots with three *distinct* colors so the palette order is
+// exactly the slot visit order: any unsorted visit order produces a different
+// palette than sorted order. A single call to slotColorPalette is not enough
+// to catch a missing sort, since Go's randomized map iteration could still
+// happen to visit the slots in ascending order by chance (1 in 6 for 3
+// slots). Looping 100 times drives the chance of never observing an
+// unsorted iteration down to a negligible ((1/6)^100), so if the sort is
+// removed this test will fail on close to its first run, essentially every
+// time.
+func TestSlotColorPaletteOrderIsDeterministic(t *testing.T) {
+	m := map[int]string{1: "#FF0000", 2: "#00FF00", 3: "#0000FF"}
+	want := []string{"#FF0000FF", "#00FF00FF", "#0000FFFF"}
+
+	for i := 0; i < 100; i++ {
+		palette, _ := slotColorPalette(m)
+		if len(palette) != len(want) {
+			t.Fatalf("iteration %d: palette = %v, want %v", i, palette, want)
+		}
+		for j := range want {
+			if palette[j] != want[j] {
+				t.Fatalf("iteration %d: palette = %v, want %v (slot visit order was not ascending)", i, palette, want)
+			}
+		}
+	}
+}
+
 func TestSlotColorPaletteSkipsEmpty(t *testing.T) {
 	palette, bySlot := slotColorPalette(map[int]string{1: "", 2: "#00FF00"})
 	if len(palette) != 1 {
