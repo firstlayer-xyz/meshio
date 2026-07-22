@@ -159,3 +159,35 @@ func TestReadUnidentifiable(t *testing.T) {
 		t.Error("Read accepted a file identifiable by neither content nor extension")
 	}
 }
+
+// CanRead answers from the path alone while Read identifies by content, so Read
+// is strictly the more capable of the two. This pins that relationship: CanRead
+// is a lower bound and may say no where Read succeeds, but it must never say
+// yes where Read cannot even choose a decoder.
+func TestCanReadIsALowerBoundOnRead(t *testing.T) {
+	dir := t.TempDir()
+
+	// Extensionless ASCII STL: CanRead says no, Read loads it anyway.
+	noExt := filepath.Join(dir, "model")
+	if err := os.WriteFile(noExt, []byte(asciiSTLSample), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if CanRead(noExt) {
+		t.Error("CanRead should answer from the extension alone, and there is none")
+	}
+	if _, err := Read(noExt); err != nil {
+		t.Errorf("Read should identify this by content: %v", err)
+	}
+
+	// Known extension: CanRead says yes, and Read must be able to proceed.
+	withExt := filepath.Join(dir, "model.stl")
+	if err := os.WriteFile(withExt, []byte(asciiSTLSample), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !CanRead(withExt) {
+		t.Error("CanRead should accept a known extension")
+	}
+	if _, err := Read(withExt); err != nil {
+		t.Errorf("Read failed on a file CanRead accepted: %v", err)
+	}
+}

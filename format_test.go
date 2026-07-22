@@ -184,3 +184,53 @@ func TestProbeFile_MissingFile(t *testing.T) {
 		t.Error("ProbeFile on a missing file returned no error")
 	}
 }
+
+// A binary STL's float payload can contain a newline followed by "v ", which
+// looks exactly like an OBJ vertex line. Checking OBJ before binary STL
+// therefore steals real binary STLs -- the reverse cannot happen, because
+// looksLikeBinarySTL requires a NUL in the first 84 bytes and text has none.
+// So the binary check is the more discriminating one and must run first.
+func TestProbe_BinarySTLWithOBJishPayload(t *testing.T) {
+	b := binarySTL("exported by something", 4)
+	copy(b[100:], []byte("\nv 1 2 3\n"))
+
+	if got := Probe(b); got != FormatSTL {
+		t.Errorf("binary STL containing %q identified as %q, want %q", "\nv ", got, FormatSTL)
+	}
+}
+
+// Probe and ProbeFile are the same identification at two strengths: ProbeFile
+// may be more decisive, but it must never name a different format.
+func TestProbe_AgreesWithProbeFile(t *testing.T) {
+	objish := binarySTL("exported by something", 4)
+	copy(objish[100:], []byte("\nv 1 2 3\n"))
+
+	cases := []struct {
+		name string
+		body []byte
+	}{
+		{"ascii stl", []byte(asciiSTLSample)},
+		{"obj", []byte(objSample)},
+		{"binary stl", binarySTL("header", 4)},
+		{"binary stl with objish payload", objish},
+		{"binary stl with solid header", binarySTL("solid but binary", 4)},
+	}
+
+	dir := t.TempDir()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := filepath.Join(dir, tc.name)
+			if err := os.WriteFile(p, tc.body, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			fromFile, err := ProbeFile(p)
+			if err != nil {
+				t.Fatalf("ProbeFile: %v", err)
+			}
+			if fromSample := Probe(tc.body); fromSample != fromFile {
+				t.Errorf("Probe = %q but ProbeFile = %q; the two must not name different formats",
+					fromSample, fromFile)
+			}
+		})
+	}
+}

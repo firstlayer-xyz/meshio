@@ -168,7 +168,13 @@ func WriteExtensions() []string {
 	return exts
 }
 
-// CanRead reports whether Read can decode the file at path, by extension.
+// CanRead reports whether path has an extension Read recognises. It inspects
+// the path only, never the file, so it is cheap enough to filter a directory
+// listing.
+//
+// It is a lower bound, not an exact answer: Read identifies files by content
+// first, so it also loads a mislabeled or extensionless file that CanRead
+// rejects. Use ProbeFile when the file exists and the exact answer matters.
 func CanRead(path string) bool {
 	_, ok := readers[strings.ToLower(pathExt(path))]
 	return ok

@@ -45,20 +45,26 @@ const (
 // file. ProbeFile resolves both, because it can open the archive and stat the
 // file. Prefer ProbeFile when you have a path.
 func Probe(sample []byte) Format {
-	// Order matters. The text checks run before the binary-STL check because a
-	// binary STL has no magic number: it is identified by plausible framing
-	// alone, and arbitrary text is all too capable of looking plausible.
+	// Order matters, and it is the same order probeWithSize uses: the two must
+	// never name different formats for the same bytes.
+	//
+	// The binary-STL check runs before the OBJ check because it is the more
+	// discriminating of the two. It requires a NUL in the first 84 bytes, which
+	// no text format has, so an OBJ cannot match it. The reverse is not true: a
+	// binary STL's float payload regularly contains a newline, and the three
+	// bytes after one are as likely to be "v " as anything else, so an OBJ check
+	// run first will steal real binary STLs.
 	if hasZipMagic(sample) {
 		return Format3MF
 	}
 	if isASCIISTLSample(sample) {
 		return FormatSTL
 	}
-	if isOBJSample(sample) {
-		return FormatOBJ
-	}
 	if looksLikeBinarySTL(sample) {
 		return FormatSTL
+	}
+	if isOBJSample(sample) {
+		return FormatOBJ
 	}
 	return FormatUnknown
 }
@@ -96,6 +102,11 @@ func probeOpenFile(f *os.File, path string) (Format, error) {
 // probeWithSize identifies a format using the whole file: the archive contents
 // for a zip, and the exact length for a binary STL. Both are checks Probe
 // cannot make from a prefix alone.
+//
+// The check order matches Probe's, and for the same reason -- see the comment
+// there. Here the binary-STL check is decisive rather than merely
+// discriminating: no OBJ's bytes at offset 80 will happen to predict its own
+// file length.
 func probeWithSize(sample []byte, size int64, r io.ReaderAt) (Format, error) {
 	if hasZipMagic(sample) {
 		if isThreeMFArchive(r, size) {
