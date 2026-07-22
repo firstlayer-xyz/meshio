@@ -17,9 +17,17 @@ func TestPaintString(t *testing.T) {
 		{2, "8"},   // 00 split + 10 state -> nibble 0b1000
 		{3, "0C"},  // 00 + 11 indicator -> C, then (3-3)=0, prepended
 		{4, "1C"},  // (4-3)=1
-		{5, "2C"},
-		{10, "7C"},
-		{15, "CC"},
+		{5, "2C"},  // (5-3)=2
+		{6, "3C"},  // (6-3)=3
+		{7, "4C"},  // (7-3)=4
+		{8, "5C"},  // (8-3)=5
+		{9, "6C"},  // (9-3)=6
+		{10, "7C"}, // (10-3)=7
+		{11, "8C"}, // (11-3)=8
+		{12, "9C"}, // (12-3)=9
+		{13, "AC"}, // (13-3)=10=A
+		{14, "BC"}, // (14-3)=11=B
+		{15, "CC"}, // (15-3)=12=C
 		{16, "DC"}, // (16-3)=13=D; the highest slot both slicers agree on
 	}
 	for _, tc := range cases {
@@ -62,4 +70,34 @@ func TestPaintStringShape(t *testing.T) {
 			}
 		}
 	}
+}
+
+// paintString documents that it panics above maxPaintSlot, and that
+// callers must validate first because reaching that path is a bug, not bad
+// input. Nothing previously exercised either side of that boundary: a stray
+// off-by-one in the switch (slot < maxPaintSlot instead of slot <=
+// maxPaintSlot) would make the last valid slot panic, and a deleted default
+// arm would make the first invalid slot silently return "" -- indistinguishable
+// from "unpainted", which is exactly the kind of silent-wrong-output bug this
+// feature exists to prevent.
+func TestPaintStringBoundary(t *testing.T) {
+	t.Run("maxPaintSlot is still valid", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("paintString(%d) panicked: %v", maxPaintSlot, r)
+			}
+		}()
+		if got, want := paintString(maxPaintSlot), "DC"; got != want {
+			t.Errorf("paintString(%d) = %q, want %q", maxPaintSlot, got, want)
+		}
+	})
+
+	t.Run("maxPaintSlot+1 panics", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("paintString(%d) did not panic", maxPaintSlot+1)
+			}
+		}()
+		paintString(maxPaintSlot + 1)
+	})
 }
