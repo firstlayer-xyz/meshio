@@ -1,7 +1,7 @@
 # meshio: per-triangle filament paint
 
 **Date:** 2026-07-21
-**Status:** Design approved in outline; one assumption pending slicer verification (see Gate)
+**Status:** Approved. Gate passed 2026-07-22 — the prototype renders correctly in both Bambu Studio and PrusaSlicer.
 
 ## Problem
 
@@ -107,7 +107,7 @@ config takes Bambu's "config not found" path, which builds the volume from the
 object itself. The consequence is that there is no object-level default
 extruder: slot `0` means whatever the slicer defaults to, which is 1.
 
-## Gate — the one unverified assumption
+## Gate — PASSED 2026-07-22
 
 The design writes **both** attributes on every painted triangle:
 
@@ -120,9 +120,14 @@ Each slicer should read its own and ignore the other's, which would make one
 file serve both — the thing that was structurally impossible for parts, because
 there the *geometry* conflicted and here it does not.
 
-This is reasoned, not observed. Both parsers look attributes up by name and
-ignore unknown ones, but that is an inference about their XML handling, not
-something read off a real dual-attribute file.
+This was reasoned rather than observed when the design was written: both parsers
+look attributes up by name and ignore unknown ones, but that was an inference
+about their XML handling, not something read off a real dual-attribute file.
+
+**It has since been verified.** A prototype carrying both attributes renders its
+four painted stripes correctly in Bambu Studio and in PrusaSlicer. One file
+drives both — which was impossible for multi-part output, where the two slicers
+disagree about the geometry itself.
 
 **A prototype exists at `~/Desktop/meshio-paint-test.3mf`** — one closed solid,
 96 triangles, top surface a 4×4 grid painted in four stripes, bottom and walls
@@ -134,9 +139,9 @@ unpainted. Opening it in both slicers resolves the question:
 | One works, one does not | Split into `WritePaintedBambu` / `WritePaintedPrusa`, mirroring the parts writers. Everything else stands. |
 | Neither shows paint | The bitstream reading is wrong; return to the source before implementing. |
 
-Implementation must not begin until this is answered. It is the same discipline
-the multi-part work used, and the reason a dual-dialect parts file was abandoned
-after one throwaway rather than after a feature.
+Implementation was gated on this answer -- the same discipline the multi-part
+work used, and the reason a dual-dialect parts file was abandoned after one
+throwaway rather than after a feature.
 
 ## Data model
 

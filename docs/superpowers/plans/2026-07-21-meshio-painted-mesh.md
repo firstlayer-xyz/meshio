@@ -24,15 +24,15 @@
 
 ---
 
-## Task 0: The gate — answer this before writing any code
+## Task 0: The gate — PASSED 2026-07-22
 
 **This is not a coding task and must not be skipped.** The design's one unverified assumption is that each slicer ignores the other's paint attribute on the same triangle. Everything else was read out of the slicers' source; this was not.
 
 A prototype already exists at `~/Desktop/meshio-paint-test.3mf` — one closed solid, 96 triangles, top surface a 4×4 grid painted in four stripes (slots 1–4), bottom and walls unpainted, every painted triangle carrying both `slic3rpe:mmu_segmentation` and `paint_color`.
 
-- [ ] **Step 1: Open the prototype in Bambu Studio.** Check the paint tool. Expect four stripes on the top surface.
-- [ ] **Step 2: Open the prototype in PrusaSlicer.** Multi-material painting tool, with a multi-extruder printer profile selected. Expect the same four stripes.
-- [ ] **Step 3: Act on the result.**
+- [x] **Step 1: Open the prototype in Bambu Studio.** Check the paint tool. Expect four stripes on the top surface.
+- [x] **Step 2: Open the prototype in PrusaSlicer.** Multi-material painting tool, with a multi-extruder printer profile selected. Expect the same four stripes.
+- [x] **Step 3: Act on the result.** Both slicers render the four stripes. Proceed to Task 1 as written.
 
 | Result | Action |
 |---|---|
