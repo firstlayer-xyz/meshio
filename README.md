@@ -3,19 +3,45 @@
 A dependency-free Go library for reading and writing triangle meshes: **3MF**, **STL**, and **OBJ**, with per-face color.
 
 ```go
-mesh, err := meshio.Read("model.3mf")   // format from extension
-err = threemf.Write("out.3mf", mesh)
+mesh, err := meshio.Read("model.3mf")   // format from content
+err = meshio.Write("out.stl", mesh)     // format from extension
 
 // or per format
 mesh, err = stl.Decode(r)
 err = obj.Encode(w, mesh, mtlWriter, "model.mtl") // mtlName is required when mtlWriter != nil
 ```
 
+## Identifying a file
+
+`Read` identifies a file by its **content**, not its name, and falls back to the
+extension only when the content matches nothing known. A 3MF saved as
+`model.stl` still loads.
+
+```go
+format, err := meshio.ProbeFile("mystery.dat")
+switch format {
+case meshio.FormatSTL, meshio.FormatOBJ, meshio.Format3MF:
+    mesh, err := meshio.Read("mystery.dat")
+case meshio.FormatUnknown:
+    // not a mesh file this library knows
+}
+
+meshio.Probe(firstBytes) // same identification from a byte sample
+```
+
+`ProbeFile` is the more accurate of the two: it can open the archive to confirm
+a zip is really a 3MF, and check that a binary STL's triangle count matches the
+file length exactly. `Probe` sees only a prefix, so it can do neither and says
+so in its doc comment.
+
+`Write` dispatches on the extension — there is no content to identify when
+creating a file.
+
 ## Packages
 
 | Package | Holds |
 |---|---|
-| `meshio` | `Read`, `Decode`, `Encode` dispatch; type aliases for the `geom` types |
+| `meshio` | `Read`, `Write`, `Probe`/`ProbeFile`, `Decode`/`Encode` dispatch; type aliases for the `geom` types |
 | `meshio/geom` | `Geometry`, `Mesh`, `FaceColor`, `Attachment` |
 | `meshio/stl` | STL read/write |
 | `meshio/obj` | OBJ read/write, `.mtl` materials |

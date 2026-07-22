@@ -25,7 +25,7 @@ func triangle() *Mesh {
 func TestEncodeDecodeDispatch(t *testing.T) {
 	orig := triangle()
 
-	for _, format := range []string{"stl", "obj"} {
+	for _, format := range []Format{FormatSTL, FormatOBJ} {
 		var buf bytes.Buffer
 		if err := Encode(&buf, orig, format); err != nil {
 			t.Fatalf("Encode(%s): %v", format, err)
