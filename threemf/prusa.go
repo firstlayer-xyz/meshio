@@ -135,7 +135,9 @@ func EncodePrusa(w io.Writer, o *Object) error {
 	}
 
 	fmt.Fprintf(&model, "  <object id=\"%d\" type=\"model\">\n", objectID)
-	writeMeshXML(&model, merged, "   ", colorGroupID, func(tri int) int { return triColor[tri] })
+	writeMeshXML(&model, merged, "   ", colorGroupID, func(tri int) triangleAttrs {
+		return triangleAttrs{colorIdx: triColor[tri]}
+	})
 	model.WriteString("  </object>\n")
 	model.WriteString(" </resources>\n")
 	model.WriteString(" <build>\n")

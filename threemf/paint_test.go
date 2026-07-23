@@ -1,6 +1,41 @@
 package threemf
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/firstlayer-xyz/meshio/geom"
+)
+
+// writeMeshXML must emit both slicers' paint attributes with the same value,
+// and omit both when a triangle is unpainted.
+func TestWriteMeshXMLEmitsPaint(t *testing.T) {
+	g := geom.Geometry{
+		Vertices: []float32{0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0},
+		Indices:  []uint32{0, 1, 2, 1, 3, 2},
+	}
+	var sb strings.Builder
+	writeMeshXML(&sb, g, "", 0, func(tri int) triangleAttrs {
+		if tri == 0 {
+			return triangleAttrs{colorIdx: -1, paint: "1C"}
+		}
+		return triangleAttrs{colorIdx: -1} // unpainted
+	})
+	out := sb.String()
+
+	if !strings.Contains(out, `slic3rpe:mmu_segmentation="1C"`) {
+		t.Errorf("missing PrusaSlicer paint attribute:\n%s", out)
+	}
+	if !strings.Contains(out, `paint_color="1C"`) {
+		t.Errorf("missing Bambu paint attribute:\n%s", out)
+	}
+	if got := strings.Count(out, "paint_color="); got != 1 {
+		t.Errorf("paint_color on %d triangles, want 1 (the other is unpainted)", got)
+	}
+	if got := strings.Count(out, "mmu_segmentation="); got != 1 {
+		t.Errorf("mmu_segmentation on %d triangles, want 1", got)
+	}
+}
 
 // The encoding, read out of TriangleSelector::serialize and
 // FacetsAnnotation::get_triangle_as_string in both PrusaSlicer and

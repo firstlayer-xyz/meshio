@@ -117,7 +117,9 @@ func EncodeBambu(w io.Writer, o *Object) error {
 		}
 		fmt.Fprintf(&objects, "  <object id=\"%d\" p:UUID=\"%s\" type=\"model\">\n", partID, derivedUUID("partobject", p.Name, partID))
 		// A part is one slot, so every triangle takes the same palette index.
-		writeMeshXML(&objects, p.Geometry, "   ", l.colorGroupID, func(int) int { return colorIdx })
+		writeMeshXML(&objects, p.Geometry, "   ", l.colorGroupID, func(int) triangleAttrs {
+			return triangleAttrs{colorIdx: colorIdx}
+		})
 		objects.WriteString("  </object>\n")
 	}
 	objects.WriteString(" </resources>\n")
