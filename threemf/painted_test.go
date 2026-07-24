@@ -90,6 +90,40 @@ func TestPainted_UnpaintedTriangleOmitsAttributes(t *testing.T) {
 	}
 }
 
+// TestPainted_UnpaintedTriangleCanStillBeColored pins that "painted" (slot >
+// 0) and "colored" (slot has a SlotColors entry) are independent per
+// triangle. Triangle 0 is both painted and colored: it must carry paint
+// attributes AND a colorgroup reference. Triangle 1 is colored but slot 0,
+// i.e. unpainted: it must carry a colorgroup reference but no paint
+// attributes at all.
+//
+// slotColorPalette (threemf/slotcolor.go) does not special-case slot 0 -- it
+// iterates every key in SlotColors regardless of value, so SlotColors[0]
+// produces a palette entry like any other slot and unpainted triangles at
+// that slot get a pid/p1/p2/p3 reference. That is the real, current
+// behavior this test pins.
+func TestPainted_UnpaintedTriangleCanStillBeColored(t *testing.T) {
+	p := &PaintedMesh{Geometry: quad(), FaceSlots: []int{1, 0}}
+	p.SetSlotColor(1, "#FF0000")
+	p.SetSlotColor(0, "#00FF00")
+
+	var buf bytes.Buffer
+	if err := EncodePainted(&buf, p); err != nil {
+		t.Fatalf("EncodePainted: %v", err)
+	}
+	model := readZipPart(t, buf.Bytes(), "3D/3dmodel.model")
+
+	if got := len(allMatches(`paint_color="([^"]*)"`, model)); got != 1 {
+		t.Errorf("paint_color count = %d, want 1: only the slot-1 triangle is painted", got)
+	}
+	if got := len(allMatches(`slic3rpe:mmu_segmentation="([^"]*)"`, model)); got != 1 {
+		t.Errorf("mmu_segmentation count = %d, want 1: only the slot-1 triangle is painted", got)
+	}
+	if got := len(allMatches(`pid="(\d+)"`, model)); got != 2 {
+		t.Errorf("pid count = %d, want 2: both triangles have a SlotColors entry, so both are colored regardless of paint", got)
+	}
+}
+
 func TestPainted_ColorGroupFromSlotColors(t *testing.T) {
 	var buf bytes.Buffer
 	if err := EncodePainted(&buf, paintedQuad()); err != nil {
@@ -181,6 +215,30 @@ func TestPainted_Validation(t *testing.T) {
 				t.Errorf("error %q does not contain %q", err.Error(), tc.want)
 			}
 		})
+	}
+}
+
+// TestPainted_EncodePaintedRejectsOversizedSlotWithoutPanicking pins that the
+// public EncodePainted path -- not just validate() called directly -- rejects
+// a slot above maxPaintSlot with a clean error before any triangle reaches
+// paintString, which panics past that ceiling. If a future edit reordered
+// the triangle loop ahead of the validate() call, this test must fail loudly
+// (via the recovered panic) rather than crash the test binary.
+func TestPainted_EncodePaintedRejectsOversizedSlotWithoutPanicking(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("EncodePainted panicked instead of returning an error: %v", r)
+		}
+	}()
+
+	p := &PaintedMesh{Geometry: quad(), FaceSlots: []int{1, 17}}
+	var buf bytes.Buffer
+	err := EncodePainted(&buf, p)
+	if err == nil {
+		t.Fatal("expected an error for a filament slot above the shared ceiling, got nil")
+	}
+	if !strings.Contains(err.Error(), "exceeds 16") {
+		t.Errorf("error %q does not contain %q", err.Error(), "exceeds 16")
 	}
 }
 
