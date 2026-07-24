@@ -13,6 +13,7 @@ import (
 const (
 	nsCore         = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 	nsProduction   = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06"
+	nsMaterial     = "http://schemas.microsoft.com/3dmanufacturing/material/2015/02"
 	nsBambu        = "http://schemas.bambulab.com/package/2021"
 	relType3DModel = "http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"
 	identityXform  = "1 0 0 0 1 0 0 0 1 0 0 0"
@@ -97,7 +98,7 @@ func EncodeBambu(w io.Writer, o *Object) error {
 	objects.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	materialNS := ""
 	if len(palette) > 0 {
-		materialNS = ` xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02"`
+		materialNS = ` xmlns:m="` + nsMaterial + `"`
 	}
 	fmt.Fprintf(&objects, `<model unit="millimeter" xml:lang="en-US" xmlns="%s" xmlns:p="%s"%s requiredextensions="p">`+"\n",
 		nsCore, nsProduction, materialNS)
@@ -117,7 +118,9 @@ func EncodeBambu(w io.Writer, o *Object) error {
 		}
 		fmt.Fprintf(&objects, "  <object id=\"%d\" p:UUID=\"%s\" type=\"model\">\n", partID, derivedUUID("partobject", p.Name, partID))
 		// A part is one slot, so every triangle takes the same palette index.
-		writeMeshXML(&objects, p.Geometry, "   ", l.colorGroupID, func(int) int { return colorIdx })
+		writeMeshXML(&objects, p.Geometry, "   ", l.colorGroupID, func(int) triangleAttrs {
+			return triangleAttrs{colorIdx: colorIdx}
+		})
 		objects.WriteString("  </object>\n")
 	}
 	objects.WriteString(" </resources>\n")

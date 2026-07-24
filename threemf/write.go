@@ -67,7 +67,7 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 	sb.WriteString(`<model unit="millimeter" xml:lang="en-US"`)
 	sb.WriteString(` xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"`)
 	if hasColors {
-		sb.WriteString(` xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02"`)
+		sb.WriteString(` xmlns:m="` + nsMaterial + `"`)
 	}
 	sb.WriteString(">\n")
 
@@ -82,11 +82,11 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 	}
 
 	fmt.Fprintf(&sb, "  <object id=\"%d\" type=\"model\">\n", objectID)
-	writeMeshXML(&sb, m.Geometry, "   ", colorGroupID, func(tri int) int {
+	writeMeshXML(&sb, m.Geometry, "   ", colorGroupID, func(tri int) triangleAttrs {
 		if !hasColors {
-			return -1
+			return triangleAttrs{colorIdx: -1}
 		}
-		return faceColorIdx[tri]
+		return triangleAttrs{colorIdx: faceColorIdx[tri]}
 	})
 	sb.WriteString("  </object>\n")
 	sb.WriteString(" </resources>\n")
@@ -155,10 +155,20 @@ func (r *resourceIDs) next() int {
 	return r.last
 }
 
+// triangleAttrs is what varies per triangle in a 3MF <mesh>: its palette
+// reference and its paint. Grouped into a struct so the serializer takes one
+// callback rather than one parameter per attribute.
+type triangleAttrs struct {
+	colorIdx int    // index into the colorgroup; < 0 omits pid/p1/p2/p3
+	paint    string // slicer paint encoding; "" omits the paint attributes
+}
+
 // writeMeshXML serializes geometry as a 3MF <mesh> element, shared by all 3MF
-// writers. colorAt returns the palette index for a triangle, or -1 to omit the
-// pid/p1/p2/p3 color references.
-func writeMeshXML(sb *strings.Builder, g geom.Geometry, indent string, groupID int, colorAt func(tri int) int) {
+// writers. attrsAt returns the per-triangle attributes.
+//
+// Both slicers' paint attributes are written with the same value: they use the
+// identical encoding and differ only in name, so one file serves both.
+func writeMeshXML(sb *strings.Builder, g geom.Geometry, indent string, groupID int, attrsAt func(tri int) triangleAttrs) {
 	numVerts := len(g.Vertices) / 3
 	numTris := len(g.Indices) / 3
 
@@ -172,12 +182,18 @@ func writeMeshXML(sb *strings.Builder, g geom.Geometry, indent string, groupID i
 	sb.WriteString(indent + " <triangles>\n")
 	for i := 0; i < numTris; i++ {
 		v1, v2, v3 := g.Indices[i*3], g.Indices[i*3+1], g.Indices[i*3+2]
-		if ci := colorAt(i); ci >= 0 {
-			fmt.Fprintf(sb, indent+"  <triangle v1=\"%d\" v2=\"%d\" v3=\"%d\" pid=\"%d\" p1=\"%d\" p2=\"%d\" p3=\"%d\" />\n",
-				v1, v2, v3, groupID, ci, ci, ci)
-		} else {
-			fmt.Fprintf(sb, indent+"  <triangle v1=\"%d\" v2=\"%d\" v3=\"%d\" />\n", v1, v2, v3)
+		a := attrsAt(i)
+		fmt.Fprintf(sb, indent+"  <triangle v1=\"%d\" v2=\"%d\" v3=\"%d\"", v1, v2, v3)
+		if a.colorIdx >= 0 {
+			fmt.Fprintf(sb, " pid=\"%d\" p1=\"%d\" p2=\"%d\" p3=\"%d\"", groupID, a.colorIdx, a.colorIdx, a.colorIdx)
 		}
+		if a.paint != "" {
+			// The mmu_segmentation attribute is slic3rpe-prefixed, so any caller
+			// that returns a non-empty paint must declare xmlns:slic3rpe on its
+			// <model> element (see EncodePainted). paint_color is unprefixed.
+			fmt.Fprintf(sb, " slic3rpe:mmu_segmentation=\"%s\" paint_color=\"%s\"", xmlAttr(a.paint), xmlAttr(a.paint))
+		}
+		sb.WriteString(" />\n")
 	}
 	sb.WriteString(indent + " </triangles>\n")
 	sb.WriteString(indent + "</mesh>\n")

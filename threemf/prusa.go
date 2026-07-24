@@ -98,7 +98,7 @@ func EncodePrusa(w io.Writer, o *Object) error {
 	model.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	materialNS := ""
 	if len(palette) > 0 {
-		materialNS = ` xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02"`
+		materialNS = ` xmlns:m="` + nsMaterial + `"`
 	}
 	fmt.Fprintf(&model, `<model unit="millimeter" xml:lang="en-US" xmlns="%s"%s>`+"\n", nsCore, materialNS)
 	model.WriteString(` <metadata name="Application">meshio</metadata>` + "\n")
@@ -135,7 +135,9 @@ func EncodePrusa(w io.Writer, o *Object) error {
 	}
 
 	fmt.Fprintf(&model, "  <object id=\"%d\" type=\"model\">\n", objectID)
-	writeMeshXML(&model, merged, "   ", colorGroupID, func(tri int) int { return triColor[tri] })
+	writeMeshXML(&model, merged, "   ", colorGroupID, func(tri int) triangleAttrs {
+		return triangleAttrs{colorIdx: triColor[tri]}
+	})
 	model.WriteString("  </object>\n")
 	model.WriteString(" </resources>\n")
 	model.WriteString(" <build>\n")
