@@ -162,10 +162,11 @@ brush in the slicer UI produces.
 - Bambu Studio / Orca: `paint_color="..."` on `<triangle>`.
 
 The attribute value encodes a recursive triangle-subdivision tree with a slot per
-leaf, so a single triangle can carry several colors. **meshio does not write
-these, and the encoding is not documented here because it has not been verified
-against a real painted file.** Do not implement it from guesswork; produce a
-painted sample from the slicer and decode it first.
+leaf, so a single triangle can carry several colors. **meshio writes these** —
+one leaf per triangle, no subdivision — via `threemf.WritePainted`; see
+[Painting one solid instead of splitting it](#painting-one-solid-instead-of-splitting-it)
+below. It does not read them back: `Decode` drops the paint attributes on
+import.
 
 ## Slot count and geometry gotchas
 
@@ -217,6 +218,33 @@ err := threemf.WritePrusa("plate.3mf", obj)
 - **Do not** assume a correct-looking preview means a correct toolpath. Verify by
   slicing and checking the filament-change count.
 
+### Painting one solid instead of splitting it
+
+Splitting a model into parts requires each part to be a printable solid, which
+is why a slab with a colored top face cannot be done that way — the non-base
+colors come out as flat, zero-thickness patches. Painting binds individual
+triangles of a single mesh instead, so the geometry ships unchanged:
+
+```go
+p := &threemf.PaintedMesh{Name: "plate", Geometry: slab}
+p.FaceSlots = slots // one entry per triangle; 0 leaves a face unpainted
+p.SetSlotColor(1, "#000000")
+p.SetSlotColor(2, "#C81E1E")
+err := threemf.WritePainted("plate.3mf", p)
+```
+
+One file works in both slicers: they use the identical paint encoding and differ
+only in the attribute name, so each triangle carries both. This is possible for
+paint and not for parts, where the two disagree about the geometry itself.
+
+**Slots are limited to 1–16.** Above 16 the encoders diverge — Bambu emits
+repeating continuation nibbles where PrusaSlicer expects a prefix code — so no
+single file can serve both. Sixteen is also the AMS maximum.
+
+Paint is write-only: `Decode` drops it. A brush-painted file encodes a recursive
+triangle-subdivision tree whose children are not in the mesh, so reading it is a
+much larger question than writing.
+
 ## Status
 
 | Capability | State |
@@ -225,7 +253,7 @@ err := threemf.WritePrusa("plate.3mf", obj)
 | Read production-extension / multi-part 3MF | works (geometry flattened to one mesh) |
 | Multi-part object with per-part filament slot (Bambu) | works — `threemf.WriteBambu` |
 | Multi-part object with per-part filament slot (PrusaSlicer) | works — `threemf.WritePrusa` |
-| Per-triangle paint (`paint_color` / `mmu_segmentation`) | not implemented, encoding unverified |
+| Per-triangle paint (`paint_color` / `mmu_segmentation`) | works — `threemf.WritePainted`, slots 1–16 |
 
 ### Provenance
 
