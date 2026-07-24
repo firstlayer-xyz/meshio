@@ -98,7 +98,7 @@ func EncodePrusa(w io.Writer, o *Object) error {
 	model.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	materialNS := ""
 	if len(palette) > 0 {
-		materialNS = ` xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02"`
+		materialNS = ` xmlns:m="` + nsMaterial + `"`
 	}
 	fmt.Fprintf(&model, `<model unit="millimeter" xml:lang="en-US" xmlns="%s"%s>`+"\n", nsCore, materialNS)
 	model.WriteString(` <metadata name="Application">meshio</metadata>` + "\n")

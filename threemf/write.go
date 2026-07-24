@@ -67,7 +67,7 @@ func Encode(w io.Writer, m *geom.Mesh) error {
 	sb.WriteString(`<model unit="millimeter" xml:lang="en-US"`)
 	sb.WriteString(` xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"`)
 	if hasColors {
-		sb.WriteString(` xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02"`)
+		sb.WriteString(` xmlns:m="` + nsMaterial + `"`)
 	}
 	sb.WriteString(">\n")
 
@@ -188,6 +188,9 @@ func writeMeshXML(sb *strings.Builder, g geom.Geometry, indent string, groupID i
 			fmt.Fprintf(sb, " pid=\"%d\" p1=\"%d\" p2=\"%d\" p3=\"%d\"", groupID, a.colorIdx, a.colorIdx, a.colorIdx)
 		}
 		if a.paint != "" {
+			// The mmu_segmentation attribute is slic3rpe-prefixed, so any caller
+			// that returns a non-empty paint must declare xmlns:slic3rpe on its
+			// <model> element (see EncodePainted). paint_color is unprefixed.
 			fmt.Fprintf(sb, " slic3rpe:mmu_segmentation=\"%s\" paint_color=\"%s\"", xmlAttr(a.paint), xmlAttr(a.paint))
 		}
 		sb.WriteString(" />\n")
